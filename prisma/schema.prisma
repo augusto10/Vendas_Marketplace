@@ -1,0 +1,397 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum UploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum UploadType {
+  FISCAL_INVOICE
+  SHOPEE_WALLET
+  SHOPEE_ACCELERA
+  SHOPEE_INCOME
+  UNKNOWN
+}
+
+enum MoneyDirection {
+  IN
+  OUT
+  NEUTRAL
+}
+
+enum FeeStatus {
+  DETECTED
+  CLASSIFIED
+  IGNORED
+}
+
+enum ApiTokenStatus {
+  ACTIVE
+  REVOKED
+}
+
+model User {
+  id            String     @id @default(uuid()) @db.Uuid
+  name          String
+  email         String     @unique
+  passwordHash  String?
+  status        UserStatus @default(ACTIVE)
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  roles         UserRole[]
+  uploads       Upload[]
+  auditLogs     AuditLog[]
+  apiTokens     ApiToken[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique
+  slug        String           @unique
+  description String?
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  module      String
+  action      String
+  key         String           @unique
+  description String?
+  createdAt   DateTime         @default(now())
+  roles       RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId    String   @db.Uuid
+  roleId    String   @db.Uuid
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  entity     String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([actorId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+model Upload {
+  id             String        @id @default(uuid()) @db.Uuid
+  type           UploadType
+  status         UploadStatus  @default(PENDING)
+  originalName   String
+  storagePath    String?
+  checksum       String
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  rowsRead       Int           @default(0)
+  rowsImported   Int           @default(0)
+  rowsUpdated    Int           @default(0)
+  errorsCount    Int           @default(0)
+  detectedFees   Int           @default(0)
+  uploadedById   String?       @db.Uuid
+  summary        Json?
+  createdAt      DateTime      @default(now())
+  processedAt    DateTime?
+  uploadedBy     User?         @relation(fields: [uploadedById], references: [id])
+  importErrors   ImportError[]
+
+  @@unique([checksum, type])
+  @@index([type, createdAt])
+  @@map("uploads")
+}
+
+model Order {
+  id             String      @id @default(uuid()) @db.Uuid
+  marketplaceId  String      @unique
+  state          String?
+  createdAtOrder DateTime?
+  paidAt         DateTime?
+  grossAmount    Decimal?    @db.Decimal(14, 2)
+  netAmount      Decimal?    @db.Decimal(14, 2)
+  buyerPaid      Decimal?    @db.Decimal(14, 2)
+  carrier        String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  items          OrderItem[]
+  invoices       SalesInvoice[]
+  incomes        ShopeeIncome[]
+
+  @@index([createdAtOrder])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @db.Uuid
+  sku         String?
+  productName String?
+  quantity    Int      @default(1)
+  unitPrice   Decimal? @db.Decimal(14, 2)
+  grossAmount Decimal? @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([sku])
+  @@map("order_items")
+}
+
+model SalesInvoice {
+  id             String   @id @default(uuid()) @db.Uuid
+  documentNumber String
+  emissionDate   DateTime
+  branch         String?
+  type           String?
+  customerOrder  String?
+  quantity       Int      @default(0)
+  cfop           String?
+  state          String?
+  totalAmount    Decimal  @db.Decimal(14, 2)
+  freightAmount  Decimal  @default(0) @db.Decimal(14, 2)
+  icmsRate       Decimal? @db.Decimal(7, 4)
+  taxableBase    Decimal  @default(0) @db.Decimal(14, 2)
+  icmsAmount     Decimal  @default(0) @db.Decimal(14, 2)
+  estimatedDifal Decimal  @default(0) @db.Decimal(14, 2)
+  orderId        String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  order          Order?   @relation(fields: [orderId], references: [id])
+
+  @@unique([documentNumber, emissionDate, branch])
+  @@index([state, emissionDate])
+  @@map("sales_invoices")
+}
+
+model WalletTransaction {
+  id              String         @id @default(uuid()) @db.Uuid
+  transactionDate DateTime
+  transactionType String
+  description     String?
+  orderMarketplaceId String?
+  direction       MoneyDirection
+  amount          Decimal        @db.Decimal(14, 2)
+  status          String?
+  balanceAfter    Decimal?       @db.Decimal(14, 2)
+  adjustmentValue Decimal?       @db.Decimal(14, 2)
+  rawHash         String         @unique
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([transactionDate, transactionType])
+  @@map("wallet_transactions")
+}
+
+model AcceleraTransaction {
+  id                 String   @id @default(uuid()) @db.Uuid
+  rescueDate         DateTime?
+  rescueId           String?
+  orderMarketplaceId String?
+  availableAmount    Decimal? @db.Decimal(14, 2)
+  rescuePercent      Decimal? @db.Decimal(7, 4)
+  rescuedAmount      Decimal? @db.Decimal(14, 2)
+  serviceFee         Decimal? @db.Decimal(14, 2)
+  receivedAmount     Decimal? @db.Decimal(14, 2)
+  remainingAmount    Decimal? @db.Decimal(14, 2)
+  refundedAmount     Decimal? @db.Decimal(14, 2)
+  orderGrossAmount   Decimal? @db.Decimal(14, 2)
+  pendingAmount      Decimal? @db.Decimal(14, 2)
+  status             String?
+  lastTransactionAt  DateTime?
+  dueDate            DateTime?
+  rawHash            String   @unique
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([rescueDate, status])
+  @@map("accelera_transactions")
+}
+
+model ShopeeIncome {
+  id                      String   @id @default(uuid()) @db.Uuid
+  orderMarketplaceId      String
+  sku                     String?
+  productName             String?
+  orderCreatedAt          DateTime?
+  paymentCompletedAt      DateTime?
+  releasedAmount          Decimal? @db.Decimal(14, 2)
+  productPrice            Decimal? @db.Decimal(14, 2)
+  refundAmount            Decimal? @db.Decimal(14, 2)
+  logisticsFreight        Decimal? @db.Decimal(14, 2)
+  reverseShippingFee      Decimal? @db.Decimal(14, 2)
+  sellerReturnFee         Decimal? @db.Decimal(14, 2)
+  commissionFee           Decimal? @db.Decimal(14, 2)
+  serviceFee              Decimal? @db.Decimal(14, 2)
+  transactionFee          Decimal? @db.Decimal(14, 2)
+  affiliateCommissionFee  Decimal? @db.Decimal(14, 2)
+  buyerPaidAmount         Decimal? @db.Decimal(14, 2)
+  carrier                 String?
+  buyerRefundedAmount     Decimal? @db.Decimal(14, 2)
+  orderId                 String?  @db.Uuid
+  rawHash                 String   @unique
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  order                   Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([orderMarketplaceId])
+  @@index([sku])
+  @@map("shopee_income")
+}
+
+model ServiceFeeDetail {
+  id                 String   @id @default(uuid()) @db.Uuid
+  orderMarketplaceId String?
+  feeName            String
+  amount             Decimal  @db.Decimal(14, 2)
+  occurredAt         DateTime?
+  rawHash            String   @unique
+  createdAt          DateTime @default(now())
+
+  @@index([feeName])
+  @@map("service_fee_details")
+}
+
+model Adjustment {
+  id                 String   @id @default(uuid()) @db.Uuid
+  orderMarketplaceId String?
+  reason             String?
+  amount             Decimal  @db.Decimal(14, 2)
+  occurredAt         DateTime?
+  rawHash            String   @unique
+  createdAt          DateTime @default(now())
+
+  @@map("adjustments")
+}
+
+model DetectedFee {
+  id          String    @id @default(uuid()) @db.Uuid
+  source      String
+  name        String
+  status      FeeStatus @default(DETECTED)
+  categoryId  String?   @db.Uuid
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  category    TaxCategory? @relation(fields: [categoryId], references: [id])
+
+  @@unique([source, name])
+  @@map("detected_fees")
+}
+
+model TaxCategory {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @unique
+  description String?
+  createdAt   DateTime      @default(now())
+  fees        DetectedFee[]
+
+  @@map("tax_categories")
+}
+
+model StateTaxRule {
+  id                 String   @id @default(uuid()) @db.Uuid
+  uf                 String
+  internalRate       Decimal  @db.Decimal(7, 4)
+  interstateRate     Decimal  @db.Decimal(7, 4)
+  fcpRate            Decimal  @default(0) @db.Decimal(7, 4)
+  validFrom          DateTime
+  validTo            DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([uf, validFrom, validTo])
+  @@unique([uf, validFrom])
+  @@map("state_tax_rules")
+}
+
+model DashboardSnapshot {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  periodStart DateTime
+  periodEnd   DateTime
+  data        Json
+  createdAt   DateTime @default(now())
+
+  @@unique([name, periodStart, periodEnd])
+  @@map("dashboard_snapshots")
+}
+
+model ImportError {
+  id        String   @id @default(uuid()) @db.Uuid
+  uploadId  String   @db.Uuid
+  rowNumber Int?
+  field     String?
+  message   String
+  rawData   Json?
+  createdAt DateTime @default(now())
+  upload    Upload   @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+
+  @@index([uploadId])
+  @@map("import_errors")
+}
+
+model ApiToken {
+  id          String         @id @default(uuid()) @db.Uuid
+  name        String
+  tokenHash   String         @unique
+  status      ApiTokenStatus @default(ACTIVE)
+  scopes      String[]
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdById String?        @db.Uuid
+  createdAt   DateTime       @default(now())
+  revokedAt   DateTime?
+  createdBy   User?          @relation(fields: [createdById], references: [id])
+
+  @@index([status])
+  @@map("api_tokens")
+}

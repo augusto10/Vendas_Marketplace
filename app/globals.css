@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 24% 97%;
+  --foreground: 220 32% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 30% 12%;
+  --primary: 172 72% 27%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 42 82% 56%;
+  --secondary-foreground: 36 40% 12%;
+  --muted: 210 20% 93%;
+  --muted-foreground: 215 16% 42%;
+  --accent: 204 80% 42%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 76% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 20% 84%;
+  --input: 214 20% 84%;
+  --ring: 172 72% 27%;
+}
+
+.dark {
+  --background: 222 24% 8%;
+  --foreground: 210 22% 96%;
+  --card: 222 22% 11%;
+  --card-foreground: 210 22% 96%;
+  --primary: 172 68% 39%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 42 82% 56%;
+  --secondary-foreground: 36 40% 12%;
+  --muted: 220 18% 16%;
+  --muted-foreground: 215 15% 70%;
+  --accent: 204 78% 48%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 18% 22%;
+  --input: 220 18% 22%;
+  --ring: 172 68% 39%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, hsl(210 28% 98%) 0%, hsl(var(--background)) 40%),
+    hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.18);
+}
+
+@layer components {
+  .data-surface {
+    @apply rounded-lg border bg-card shadow-sm;
+  }
+
+  .metric-card {
+    @apply rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md;
+  }
+}
