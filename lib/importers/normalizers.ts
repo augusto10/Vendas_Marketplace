@@ -17,12 +17,13 @@ export function normalizeRow(row: Record<string, unknown>) {
 export function money(value: unknown): number {
   if (value === null || value === undefined || value === "") return 0;
   if (typeof value === "number") return value;
-  const raw = String(value)
+  const text = String(value)
     .replace(/\s/g, "")
-    .replace("R$", "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .replace(/[^\d.-]/g, "");
+    .replace("R$", "");
+  const normalized = text.includes(",")
+    ? text.replace(/\./g, "").replace(",", ".")
+    : text;
+  const raw = normalized.replace(/[^\d.-]/g, "");
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : 0;
 }

@@ -1,110 +1,41 @@
 import { prisma } from "@/lib/prisma";
 import type { Period } from "@/lib/period";
+import { getSalesConciliationReport, type SalesConciliationDateMode } from "@/lib/services/report-service";
 
 export type DashboardMetrics = {
   soldAmount: number;
+  shopeeSoldAmount: number;
   receivedAmount: number;
   unitsSold: number;
+  paidUnitsSold: number;
   orders: number;
+  paidOrders: number;
+  unpaidOrders: number;
   averageTicket: number;
   commission: number;
-  freight: number;
+  serviceFee: number;
+  affiliateCommissionFee: number;
   icms: number;
   difal: number;
-  refunds: number;
-  fees: number;
-  withdrawals: number;
-  ads: number;
-  netBalance: number;
 };
 
-export async function getDashboardMetrics(period?: Period): Promise<DashboardMetrics> {
-  const invoiceWhere = period ? { emissionDate: { gte: period.start, lte: period.end } } : {};
-  const incomeWhere = {
-    sku: { not: "-" },
-    ...(period ? { OR: [{ orderCreatedAt: { gte: period.start, lte: period.end } }, { paymentCompletedAt: { gte: period.start, lte: period.end } }] } : {})
-  };
-  const walletWhere = period ? { transactionDate: { gte: period.start, lte: period.end } } : {};
-  const acceleraWhere = period ? { rescueDate: { gte: period.start, lte: period.end } } : {};
-
-  const [invoiceAgg, incomeAgg, walletAgg, acceleraAgg, fiscalOrderRows] = await Promise.all([
-    prisma.salesInvoice.aggregate({
-      where: invoiceWhere,
-      _sum: { totalAmount: true, quantity: true, freightAmount: true, icmsAmount: true, estimatedDifal: true }
-    }),
-    prisma.shopeeIncome.aggregate({
-      where: incomeWhere,
-      _sum: {
-        commissionFee: true,
-        serviceFee: true,
-        transactionFee: true,
-        affiliateCommissionFee: true,
-        refundAmount: true,
-        releasedAmount: true,
-        logisticsFreight: true,
-        reverseShippingFee: true
-      }
-    }),
-    prisma.walletTransaction.groupBy({
-      where: walletWhere,
-      by: ["direction", "transactionType"],
-      _sum: { amount: true }
-    }),
-    prisma.acceleraTransaction.aggregate({
-      where: acceleraWhere,
-      _sum: { receivedAmount: true, serviceFee: true, refundedAmount: true }
-    }),
-    prisma.salesInvoice.findMany({
-      where: invoiceWhere,
-      select: { customerOrder: true, documentNumber: true }
-    })
-  ]);
-
-  const soldAmount = Number(invoiceAgg._sum.totalAmount ?? 0);
-  const unitsSold = Number(invoiceAgg._sum.quantity ?? 0);
-  const commission = Math.abs(Number(incomeAgg._sum.commissionFee ?? 0));
-  const incomeFeesRaw =
-    Number(incomeAgg._sum.serviceFee ?? 0) +
-    Number(incomeAgg._sum.transactionFee ?? 0) +
-    Number(incomeAgg._sum.affiliateCommissionFee ?? 0);
-  const incomeFees = Math.abs(incomeFeesRaw);
-  const fiscalOrders = new Set(
-    fiscalOrderRows.map((row) => row.customerOrder || row.documentNumber).filter(Boolean)
-  ).size;
-  const freightPaid =
-    Number(invoiceAgg._sum.freightAmount ?? 0) +
-    Math.abs(Number(incomeAgg._sum.logisticsFreight ?? 0)) +
-    Math.abs(Number(incomeAgg._sum.reverseShippingFee ?? 0));
-  const walletIn = walletAgg.filter((entry) => entry.direction === "IN").reduce((sum, entry) => sum + Number(entry._sum.amount ?? 0), 0);
-  const walletOutRaw = walletAgg.filter((entry) => entry.direction === "OUT").reduce((sum, entry) => sum + Number(entry._sum.amount ?? 0), 0);
-  const withdrawals = walletAgg
-    .filter((entry) => entry.direction === "OUT" && entry.transactionType.toUpperCase().includes("SAQUES"))
-    .reduce((sum, entry) => sum + Math.abs(Number(entry._sum.amount ?? 0)), 0);
-  const ads = walletAgg
-    .filter((entry) => entry.direction === "OUT" && entry.transactionType.toUpperCase().includes("PAGAMENTO"))
-    .reduce((sum, entry) => sum + Math.abs(Number(entry._sum.amount ?? 0)), 0);
-  const walletRefundAdjustments = walletAgg
-    .filter((entry) => entry.direction === "OUT" && entry.transactionType.toUpperCase().includes("AJUSTE"))
-    .reduce((sum, entry) => sum + Math.abs(Number(entry._sum.amount ?? 0)), 0);
-
+export async function getDashboardMetrics(period: Period, dateMode: SalesConciliationDateMode = "erp"): Promise<DashboardMetrics> {
+  const { summary } = await getSalesConciliationReport(period, 1, 1, "all", dateMode);
   return {
-    soldAmount,
-    receivedAmount: Number(incomeAgg._sum.releasedAmount ?? 0) + Number(acceleraAgg._sum.receivedAmount ?? 0),
-    unitsSold,
-    orders: fiscalOrders,
-    averageTicket: fiscalOrders ? soldAmount / fiscalOrders : 0,
-    commission,
-    freight: freightPaid,
-    icms: Number(invoiceAgg._sum.icmsAmount ?? 0),
-    difal: Number(invoiceAgg._sum.estimatedDifal ?? 0),
-    refunds:
-      Math.abs(Number(incomeAgg._sum.refundAmount ?? 0)) +
-      Math.abs(Number(acceleraAgg._sum.refundedAmount ?? 0)) +
-      walletRefundAdjustments,
-    fees: incomeFees + Math.abs(Number(acceleraAgg._sum.serviceFee ?? 0)),
-    withdrawals,
-    ads,
-    netBalance: walletIn + walletOutRaw
+    soldAmount: summary.fiscalTotal,
+    shopeeSoldAmount: summary.shopeeGross,
+    receivedAmount: summary.reconciledReleasedAmount,
+    unitsSold: summary.unitsSold,
+    paidUnitsSold: summary.reconciledUnitsSold,
+    orders: summary.fiscalOrders,
+    paidOrders: summary.reconciledOrders,
+    unpaidOrders: summary.fiscalOnlyOrders,
+    averageTicket: summary.fiscalOrders ? summary.fiscalTotal / summary.fiscalOrders : 0,
+    commission: summary.commission,
+    serviceFee: summary.serviceFee,
+    affiliateCommissionFee: summary.affiliateCommissionFee,
+    icms: summary.icms,
+    difal: summary.difal
   };
 }
 
@@ -129,23 +60,22 @@ export async function getMonthlySales(period?: Period) {
   return [...grouped.values()];
 }
 
-export async function getStateRanking(period?: Period) {
-  const rows = await prisma.salesInvoice.groupBy({
-    where: period ? { emissionDate: { gte: period.start, lte: period.end } } : {},
-    by: ["state"],
-    _sum: { totalAmount: true, icmsAmount: true, estimatedDifal: true },
-    _count: true,
-    orderBy: { _sum: { totalAmount: "desc" } },
-    take: 10
-  });
+export async function getStateRanking(period: Period, dateMode: SalesConciliationDateMode = "erp") {
+  const { rows } = await getSalesConciliationReport(period, 1, 100000, "all", dateMode);
+  const grouped = new Map<string, { uf: string; vendas: number; icms: number; difal: number; pedidos: number }>();
+  for (const row of rows) {
+    const uf = row.state || "N/D";
+    const current = grouped.get(uf) ?? { uf, vendas: 0, icms: 0, difal: 0, pedidos: 0 };
+    current.vendas += row.fiscalTotal;
+    current.icms += row.icms;
+    current.difal += row.difal;
+    current.pedidos += 1;
+    grouped.set(uf, current);
+  }
 
-  return rows.map((row) => ({
-    uf: row.state ?? "N/D",
-    vendas: Number(row._sum.totalAmount ?? 0),
-    icms: Number(row._sum.icmsAmount ?? 0),
-    difal: Number(row._sum.estimatedDifal ?? 0),
-    pedidos: row._count
-  }));
+  return [...grouped.values()]
+    .sort((left, right) => right.vendas - left.vendas)
+    .slice(0, 10);
 }
 
 export async function getRecentUploads() {

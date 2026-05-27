@@ -15,7 +15,9 @@ export async function GET(request: Request) {
       start: url.searchParams.get("start") ?? undefined,
       end: url.searchParams.get("end") ?? undefined
     });
-    const [metrics, monthly, states] = await Promise.all([getDashboardMetrics(period), getMonthlySales(period), getStateRanking(period)]);
+    const dateModeParam = url.searchParams.get("dateMode");
+    const dateMode = dateModeParam === "sale" || dateModeParam === "payment" ? dateModeParam : "erp";
+    const [metrics, monthly, states] = await Promise.all([getDashboardMetrics(period, dateMode), getMonthlySales(period), getStateRanking(period, dateMode)]);
     return ok({ metrics, monthly, states });
   } catch (error) {
     return handleApiError(error);

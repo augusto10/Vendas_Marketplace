@@ -4,14 +4,10 @@ import path from "path";
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname),
   allowedDevOrigins: [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:3001",
-    "http://172.28.0.1:3000",
-    "http://172.28.0.1:3001",
-    "http://192.168.3.201:3000",
-    "http://192.168.3.201:3001"
+    "localhost",
+    "127.0.0.1",
+    "172.28.0.1",
+    "192.168.3.201"
   ],
   webpack(config, { isServer }) {
     if (isServer) {

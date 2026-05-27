@@ -4,55 +4,45 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BarChart3,
   Banknote,
   Boxes,
   ClipboardList,
   CreditCard,
-  FileSpreadsheet,
-  History,
-  Landmark,
   LayoutDashboard,
-  LockKeyhole,
   PanelLeftClose,
   PanelLeftOpen,
   ReceiptText,
-  RefreshCcw,
   Settings,
-  ShieldCheck,
-  Truck,
   Upload,
   Users
 } from "lucide-react";
-import { hasPermission, type PermissionKey } from "@/lib/auth/permissions";
+import type { PermissionKey } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
 const items: Array<{ href: string; label: string; icon: React.ComponentType<{ className?: string }>; permission: PermissionKey }> = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
   { href: "/uploads", label: "Uploads", icon: Upload, permission: "uploads.view" },
-  { href: "/historico", label: "Historico", icon: History, permission: "uploads.view" },
   { href: "/vendas", label: "Vendas", icon: ReceiptText, permission: "finance.view" },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList, permission: "finance.view" },
   { href: "/produtos", label: "Produtos", icon: Boxes, permission: "finance.view" },
   { href: "/financeiro", label: "Financeiro", icon: Banknote, permission: "finance.view" },
   { href: "/acelera", label: "Acelera", icon: CreditCard, permission: "finance.view" },
   { href: "/carteira", label: "Carteira Shopee", icon: Banknote, permission: "finance.view" },
-  { href: "/comissoes", label: "Comissoes", icon: ReceiptText, permission: "finance.view" },
-  { href: "/fretes", label: "Fretes", icon: Truck, permission: "finance.view" },
-  { href: "/devolucoes", label: "Devolucoes", icon: RefreshCcw, permission: "finance.view" },
-  { href: "/fiscal", label: "Fiscal", icon: Landmark, permission: "fiscal.view" },
-  { href: "/taxas", label: "Taxas", icon: BarChart3, permission: "fees.view" },
-  { href: "/relatorios", label: "Relatorios", icon: FileSpreadsheet, permission: "finance.export" },
   { href: "/admin/usuarios", label: "Usuarios", icon: Users, permission: "users.view" },
-  { href: "/admin/permissoes", label: "Cargos", icon: ShieldCheck, permission: "users.view" },
-  { href: "/admin/logs", label: "Logs", icon: LockKeyhole, permission: "system.audit_logs" },
   { href: "/configuracoes", label: "Configuracoes", icon: Settings, permission: "system.settings" }
 ];
 
-export function Sidebar({ user }: { user: { roles: string[]; permissions: string[] } }) {
-  const visibleItems = items.filter((item) => hasPermission(user, item.permission));
+export function Sidebar({ user }: { user: { name?: string | null; roles: string[]; permissions: string[] } }) {
+  const visibleItems = items;
   const pathname = usePathname();
   const [expanded, setExpanded] = useState(false);
+  const displayName = user.name ?? "Usuario";
+  const initials = displayName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "U";
 
   useEffect(() => {
     if (!expanded) return;
@@ -64,9 +54,9 @@ export function Sidebar({ user }: { user: { roles: string[]; permissions: string
     <aside className={cn("hidden h-screen shrink-0 border-r bg-card/95 transition-[width] duration-300 lg:sticky lg:top-0 lg:block", expanded ? "w-72" : "w-[76px]")}>
       <div className={cn("flex h-20 items-center border-b px-3", expanded ? "justify-between" : "justify-center")}>
         <div className={cn("flex min-w-0 items-center gap-3", !expanded && "hidden")}>
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-sm">BI</div>
+          <div className="grid h-10 w-10 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground shadow-sm">{initials}</div>
           <div>
-            <div className="text-sm font-semibold tracking-wide">Marketplace BI</div>
+            <div className="truncate text-sm font-semibold tracking-wide">{displayName}</div>
             <div className="text-xs text-muted-foreground">Financeiro, fiscal e Shopee</div>
           </div>
         </div>
@@ -80,7 +70,7 @@ export function Sidebar({ user }: { user: { roles: string[]; permissions: string
           {expanded ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
         </button>
       </div>
-      <nav className="space-y-1 p-3">
+      <nav className="max-h-[calc(100vh-5rem)] space-y-1 overflow-y-auto p-3">
         {visibleItems.map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);

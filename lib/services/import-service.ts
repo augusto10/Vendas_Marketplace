@@ -39,7 +39,7 @@ export async function importMarketplaceFile(file: File, uploadedById?: string): 
 
   const upload = await prisma.upload.upsert({
     where: { checksum_type: { checksum: fileChecksum, type } },
-    update: { status: "PROCESSING", originalName: file.name, storagePath },
+    update: { status: "PROCESSING", originalName: file.name, storagePath, uploadedById },
     create: { checksum: fileChecksum, type, originalName: file.name, storagePath, status: "PROCESSING", uploadedById }
   });
   await prisma.importError.deleteMany({ where: { uploadId: upload.id } });
@@ -126,22 +126,13 @@ async function importFiscal(sheets: ParsedSheet[], summary: ImportSummary) {
     const existing = await prisma.salesInvoice.findUnique({
       where: { documentNumber_emissionDate_branch: { documentNumber, emissionDate, branch: String(get(row, "FIL") ?? "") } }
     });
-    await prisma.salesInvoice.upsert({
-      where: { documentNumber_emissionDate_branch: { documentNumber, emissionDate, branch: String(get(row, "FIL") ?? "") } },
-      update: {
-        type: String(get(row, "TP") ?? ""),
-        customerOrder: String(get(row, "PEDIDO CLIENTE") ?? ""),
-        quantity: int(get(row, "QTDE")),
-        cfop: String(get(row, "CFOP") ?? ""),
-        state,
-        totalAmount: money(get(row, "VR TOTAL")),
-        freightAmount: money(get(row, "VR FRETE")),
-        icmsRate: money(get(row, "ALIQ. ICMS")),
-        taxableBase,
-        icmsAmount: money(get(row, "VR ICMS")),
-        estimatedDifal
-      },
-      create: {
+    if (existing) {
+      summary.rowsUpdated++;
+      continue;
+    }
+    const order = await prisma.order.findUnique({ where: { marketplaceId: String(get(row, "PEDIDO CLIENTE") ?? "") } });
+    await prisma.salesInvoice.create({
+      data: {
         documentNumber,
         emissionDate,
         branch: String(get(row, "FIL") ?? ""),
@@ -155,10 +146,11 @@ async function importFiscal(sheets: ParsedSheet[], summary: ImportSummary) {
         icmsRate: money(get(row, "ALIQ. ICMS")),
         taxableBase,
         icmsAmount: money(get(row, "VR ICMS")),
-        estimatedDifal
+        estimatedDifal,
+        orderId: order?.id
       }
     });
-    existing ? summary.rowsUpdated++ : summary.rowsImported++;
+    summary.rowsImported++;
   }
   Object.assign(summary, periodFromDates(dates));
 }
@@ -178,6 +170,10 @@ async function importWallet(sheets: ParsedSheet[], summary: ImportSummary) {
     }
     const rawHash = hashRow(row);
     const existing = await prisma.walletTransaction.findUnique({ where: { rawHash } });
+    if (existing) {
+      summary.rowsUpdated++;
+      continue;
+    }
     const directionText = normalizeHeader(get(row, "Direcao do dinheiro"));
     const data = {
       transactionDate,
@@ -190,15 +186,13 @@ async function importWallet(sheets: ParsedSheet[], summary: ImportSummary) {
       balanceAfter: money(get(row, "Balanca apos as transacoes")),
       adjustmentValue: money(get(row, "Valor a Ser Ajustado"))
     };
-    await prisma.walletTransaction.upsert({
-      where: { rawHash },
-      update: data,
-      create: {
+    await prisma.walletTransaction.create({
+      data: {
         rawHash,
         ...data
       }
     });
-    existing ? summary.rowsUpdated++ : summary.rowsImported++;
+    summary.rowsImported++;
   }
   Object.assign(summary, periodFromDates(dates));
 }
@@ -215,31 +209,40 @@ async function importAccelera(sheets: ParsedSheet[], summary: ImportSummary) {
     dates.push(rescueDate);
     const rawHash = hashRow(row);
     const existing = await prisma.acceleraTransaction.findUnique({ where: { rawHash } });
-    await prisma.acceleraTransaction.upsert({
-      where: { rawHash },
-      update: { status: String(get(row, "Status") ?? "") },
-      create: {
+    if (existing) {
+      summary.rowsUpdated++;
+      continue;
+    }
+    await prisma.acceleraTransaction.create({
+      data: {
         rawHash,
         rescueDate,
         rescueId: String(get(row, "ID do resgate rapido") ?? ""),
         orderMarketplaceId: String(get(row, "ID do pedido") ?? ""),
-        availableAmount: money(get(row, "Valor de pedidos disponivel para resgate rapido")),
+        availableAmount: acceleraMoney(get(row, "Valor de pedidos disponivel para resgate rapido")),
         rescuePercent: money(get(row, "Percentual de resgate rapido")),
-        rescuedAmount: money(get(row, "Valor dos resgates rapidos")),
-        serviceFee: money(get(row, "Taxa de Servico")),
-        receivedAmount: money(get(row, "Valor recebido")),
-        remainingAmount: money(get(row, "Valor restante para pagamento")),
-        refundedAmount: money(get(row, "Valor reembolsado")),
-        orderGrossAmount: money(get(row, "Faturamento total do pedido")),
-        pendingAmount: money(get(row, "Valor pendente")),
+        rescuedAmount: acceleraMoney(get(row, "Valor dos resgates rapidos")),
+        serviceFee: acceleraMoney(get(row, "Taxa de Servico")),
+        receivedAmount: acceleraMoney(get(row, "Valor recebido")),
+        remainingAmount: acceleraMoney(get(row, "Valor restante para pagamento")),
+        refundedAmount: acceleraMoney(get(row, "Valor reembolsado")),
+        orderGrossAmount: acceleraMoney(get(row, "Faturamento total do pedido")),
+        pendingAmount: acceleraMoney(get(row, "Valor pendente")),
         status: String(get(row, "Status") ?? ""),
         lastTransactionAt: date(get(row, "Data da ultima transacao")),
         dueDate: date(get(row, "Data de vencimento"))
       }
     });
-    existing ? summary.rowsUpdated++ : summary.rowsImported++;
+    summary.rowsImported++;
   }
   Object.assign(summary, periodFromDates(dates));
+}
+
+function acceleraMoney(value: unknown): number {
+  const parsed = money(value);
+  const text = String(value ?? "");
+  if (typeof value === "number" || /^\d+$/.test(text.trim())) return parsed / 100;
+  return parsed;
 }
 
 async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
@@ -250,14 +253,42 @@ async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
   for (const { sheet, row } of rows) {
     rowNumber += 1;
     summary.rowsRead++;
+    if (/adjustment/i.test(sheet)) {
+      const orderMarketplaceId = String(get(row, "Numero do pedido relacionado", "Número do pedido relacionado", "ID do pedido") ?? "").trim();
+      const amount = money(get(row, "Valor do ajuste"));
+      const occurredAt = date(get(row, "Data de conclusao do ajuste", "Data de conclusão do ajuste"));
+      dates.push(occurredAt);
+      if (!orderMarketplaceId || !amount) continue;
+      const rawHash = hashRow({ sheet, row });
+      const existing = await prisma.adjustment.findUnique({ where: { rawHash } });
+      if (existing) {
+        summary.rowsUpdated++;
+        continue;
+      }
+      await prisma.adjustment.create({
+        data: {
+          rawHash,
+          orderMarketplaceId,
+          description: String(get(row, "Tipo/Descricao do ajuste", "Tipo/Descrição do ajuste") ?? ""),
+          reason: String(get(row, "Motivo do ajuste") ?? ""),
+          amount,
+          occurredAt
+        }
+      });
+      summary.rowsImported++;
+      continue;
+    }
+
     if (/service fee/i.test(sheet)) {
       const feeName = String(get(row, "Nome da taxa", "Tipo de taxa", "Taxa") ?? "Taxa de servico");
       const rawHash = hashRow({ sheet, row });
       const existing = await prisma.serviceFeeDetail.findUnique({ where: { rawHash } });
-      await prisma.serviceFeeDetail.upsert({
-        where: { rawHash },
-        update: { amount: money(get(row, "Valor", "Taxa de servico")) },
-        create: {
+      if (existing) {
+        summary.rowsUpdated++;
+        continue;
+      }
+      await prisma.serviceFeeDetail.create({
+        data: {
           rawHash,
           orderMarketplaceId: String(get(row, "ID do pedido") ?? ""),
           feeName,
@@ -269,7 +300,7 @@ async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
         detectedFeeNames.add(feeName);
         await detectFee("SHOPEE_INCOME", feeName, summary);
       }
-      existing ? summary.rowsUpdated++ : summary.rowsImported++;
+      summary.rowsImported++;
       continue;
     }
 
@@ -279,11 +310,16 @@ async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
     dates.push(orderCreatedAt);
     const rawHash = hashRow({ sheet, row });
     const existing = await prisma.shopeeIncome.findUnique({ where: { rawHash } });
+    if (existing) {
+      summary.rowsUpdated++;
+      continue;
+    }
     const order = await prisma.order.upsert({
       where: { marketplaceId: orderMarketplaceId },
       update: {
         createdAtOrder: orderCreatedAt,
         paidAt: date(get(row, "Data de conclusao do pagamento")),
+        buyerUsername: String(get(row, "Nome de usuario (Comprador)") ?? ""),
         grossAmount: money(get(row, "Quantia paga pelo comprador")),
         carrier: String(get(row, "Transportadora") ?? "")
       },
@@ -291,9 +327,14 @@ async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
         marketplaceId: orderMarketplaceId,
         createdAtOrder: orderCreatedAt,
         paidAt: date(get(row, "Data de conclusao do pagamento")),
+        buyerUsername: String(get(row, "Nome de usuario (Comprador)") ?? ""),
         grossAmount: money(get(row, "Quantia paga pelo comprador")),
         carrier: String(get(row, "Transportadora") ?? "")
       }
+    });
+    await prisma.salesInvoice.updateMany({
+      where: { customerOrder: orderMarketplaceId, orderId: null },
+      data: { orderId: order.id }
     });
     const incomeData = {
       orderMarketplaceId,
@@ -305,6 +346,8 @@ async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
       productPrice: money(get(row, "Preco do produto")),
       refundAmount: money(get(row, "Valor do Reembolso")),
       logisticsFreight: money(get(row, "Frete cobrado pelo parceiro logistico")),
+      buyerShippingFee: money(get(row, "Taxa de frete paga pelo comprador")),
+      shopeeShippingDiscount: money(get(row, "Desconto de frete pela Shopee")),
       reverseShippingFee: money(get(row, "Taxa de envio reverso")),
       sellerReturnFee: money(get(row, "Taxa de devolucao do vendedor")),
       commissionFee: money(get(row, "Taxa de comissao")),
@@ -316,10 +359,8 @@ async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
       buyerRefundedAmount: money(get(row, "Valor Reembolsado ao Comprador")),
       orderId: order.id
     };
-    await prisma.shopeeIncome.upsert({
-      where: { rawHash },
-      update: incomeData,
-      create: {
+    await prisma.shopeeIncome.create({
+      data: {
         rawHash,
         ...incomeData
       }
@@ -330,7 +371,7 @@ async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
         await detectFee("SHOPEE_INCOME", fee, summary);
       }
     }
-    existing ? summary.rowsUpdated++ : summary.rowsImported++;
+    summary.rowsImported++;
   }
   Object.assign(summary, periodFromDates(dates));
 }

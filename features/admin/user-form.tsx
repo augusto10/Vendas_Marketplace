@@ -17,11 +17,18 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export function UserForm() {
+type UserFormProps = {
+  roles: Array<{
+    name: string;
+    slug: string;
+  }>;
+};
+
+export function UserForm({ roles }: UserFormProps) {
   const [state, action, pending] = useActionState(createUserAction, null);
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", email: "", role: "visualizador" }
+    defaultValues: { name: "", email: "", role: roles[0]?.slug ?? "" }
   });
 
   return (
@@ -36,7 +43,17 @@ export function UserForm() {
       </div>
       <div className="space-y-2">
         <Label>Cargo</Label>
-        <Input {...form.register("role")} placeholder="visualizador" />
+        <select
+          {...form.register("role")}
+          className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!roles.length}
+        >
+          {roles.map((role) => (
+            <option key={role.slug} value={role.slug}>
+              {role.name}
+            </option>
+          ))}
+        </select>
       </div>
       <Button className="self-end" type="submit" disabled={pending}>
         {pending ? "Criando" : "Criar usuario"}

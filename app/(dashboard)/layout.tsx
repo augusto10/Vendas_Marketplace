@@ -8,6 +8,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!session?.user) redirect("/login");
 
   const user = {
+    name: session.user.name,
     roles: session.user.roles,
     permissions: session.user.permissions
   };

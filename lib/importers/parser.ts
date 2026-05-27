@@ -18,7 +18,11 @@ const knownHeaders = [
   "VALOR RECEBIDO",
   "SKU",
   "QUANTIA TOTAL LANCADA",
-  "PRECO DO PRODUTO"
+  "PRECO DO PRODUTO",
+  "NUMERO DO PEDIDO RELACIONADO",
+  "TIPO/DESCRICAO DO AJUSTE",
+  "MOTIVO DO AJUSTE",
+  "VALOR DO AJUSTE"
 ];
 
 function headerScore(row: unknown[]) {

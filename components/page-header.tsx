@@ -8,7 +8,7 @@ export function PageHeader({
   className
 }: {
   title: string;
-  description: string;
+  description?: string;
   eyebrow?: string;
   children?: React.ReactNode;
   className?: string;
@@ -18,7 +18,7 @@ export function PageHeader({
       <div className="max-w-3xl">
         {eyebrow ? <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-primary">{eyebrow}</div> : null}
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+        {description ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p> : null}
       </div>
       {children}
     </div>

@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { UploadForm } from "@/features/uploads/upload-form";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function HistoricoPage() {
+export default async function UploadsPage() {
   const uploads = await prisma.upload.findMany({
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -15,19 +17,22 @@ export default async function HistoricoPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Historico de importacoes</h1>
-        <p className="text-sm text-muted-foreground">Auditoria operacional dos arquivos processados.</p>
-      </div>
+      <PageHeader title="Uploads" />
+      <Card>
+        <CardContent>
+          <UploadForm />
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
-          <CardTitle>Ultimos uploads</CardTitle>
+          <CardTitle>Historico de uploads</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Data upload</TableHead>
+                <TableHead>Data</TableHead>
                 <TableHead>Arquivo</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Status</TableHead>
@@ -38,7 +43,7 @@ export default async function HistoricoPage() {
               {uploads.map((upload) => (
                 <TableRow key={upload.id}>
                   <TableCell>{upload.createdAt.toLocaleString("pt-BR")}</TableCell>
-                  <TableCell>{upload.originalName}</TableCell>
+                  <TableCell className="max-w-[360px] truncate">{upload.originalName}</TableCell>
                   <TableCell>{upload.type}</TableCell>
                   <TableCell>
                     <Badge

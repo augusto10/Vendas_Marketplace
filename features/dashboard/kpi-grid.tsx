@@ -1,42 +1,71 @@
-import type React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { currency } from "@/lib/utils";
 import type { DashboardMetrics } from "@/lib/services/dashboard-service";
-import { Banknote, Boxes, CreditCard, Landmark, PackageCheck, Receipt, Scale, TrendingDown, TrendingUp, Truck, Undo2, Wallet } from "lucide-react";
-
-const labels: Array<[keyof DashboardMetrics, string, "currency" | "number", React.ComponentType<{ className?: string }>]> = [
-  ["soldAmount", "Valor vendido", "currency", TrendingUp],
-  ["receivedAmount", "Valor recebido", "currency", Wallet],
-  ["unitsSold", "Unidades vendidas", "number", Boxes],
-  ["orders", "Pedidos", "number", PackageCheck],
-  ["averageTicket", "Ticket medio", "currency", CreditCard],
-  ["commission", "Comissao", "currency", Receipt],
-  ["freight", "Frete", "currency", Truck],
-  ["icms", "ICMS", "currency", Landmark],
-  ["difal", "DIFAL", "currency", Scale],
-  ["refunds", "Devolucoes", "currency", Undo2],
-  ["fees", "Taxas", "currency", TrendingDown],
-  ["netBalance", "Saldo liquido", "currency", Banknote]
-];
 
 export function KpiGrid({ metrics }: { metrics: DashboardMetrics }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {labels.map(([key, label, type, Icon]) => (
-        <Card key={key} className="overflow-hidden">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm text-muted-foreground">{label}</CardTitle>
-            <div className="grid h-8 w-8 place-items-center rounded-md bg-primary/10 text-primary">
-              <Icon className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold">
-              {type === "currency" ? currency(metrics[key] as number) : Number(metrics[key]).toLocaleString("pt-BR")}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+    <div className="grid gap-4 lg:grid-cols-3">
+      <SummaryCard
+        title="Vendas ERP"
+        value={currency(metrics.soldAmount)}
+        rows={[
+          ["Pedidos ERP", metrics.orders.toLocaleString("pt-BR")],
+          ["Notas emitidas", metrics.orders.toLocaleString("pt-BR")],
+          ["Pagos Shopee", metrics.paidOrders.toLocaleString("pt-BR")],
+          ["Ticket medio ERP", currency(metrics.averageTicket)],
+          ["ICMS", currency(metrics.icms)]
+        ]}
+      />
+      <SummaryCard
+        title="Vendas Shopee"
+        value={currency(metrics.shopeeSoldAmount)}
+        rows={[
+          ["Pedidos pagos", metrics.paidOrders.toLocaleString("pt-BR")],
+          ["Pedidos nao pagos", metrics.unpaidOrders.toLocaleString("pt-BR")],
+          ["Unidades vendidas", metrics.paidUnitsSold.toLocaleString("pt-BR")],
+          ["Valor recebido pago", currency(metrics.receivedAmount)],
+          ["Recebido por unidade", currency(metrics.paidUnitsSold ? metrics.receivedAmount / metrics.paidUnitsSold : 0)]
+        ]}
+      />
+      <SummaryCard
+        title="Descontos"
+        value={currency(metrics.commission + metrics.serviceFee + metrics.affiliateCommissionFee)}
+        rows={[
+          ["Comissao", currency(metrics.commission)],
+          ["Taxa servico", currency(metrics.serviceFee)],
+          ["Afiliados", currency(metrics.affiliateCommissionFee)],
+          ["DIFAL", currency(metrics.difal)]
+        ]}
+      />
     </div>
+  );
+}
+
+function SummaryCard({
+  title,
+  value,
+  rows
+}: {
+  title: string;
+  value: string;
+  rows: Array<[string, string]>;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-semibold">{value}</div>
+        <div className="mt-4 space-y-2 text-sm">
+          {rows.map(([label, rowValue]) => (
+            <div key={label} className="flex items-center justify-between gap-4 border-t pt-2 first:border-t-0 first:pt-0">
+              <span className="text-muted-foreground">{label}</span>
+              <span className="font-medium">{rowValue}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

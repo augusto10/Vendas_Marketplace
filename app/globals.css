@@ -68,3 +68,9 @@ body {
     @apply rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md;
   }
 }
+
+@keyframes upload-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

@@ -1,10 +1,11 @@
 import { CalendarDays, Filter } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Period } from "@/lib/period";
 
-export function PeriodFilter({ period, actionLabel = "Filtrar" }: { period: Period; actionLabel?: string }) {
+export function PeriodFilter({ period, actionLabel = "Filtrar", children }: { period: Period; actionLabel?: string; children?: ReactNode }) {
   return (
     <form className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-sm md:flex-row md:items-end md:justify-between">
       <div className="flex items-center gap-3">
@@ -16,7 +17,8 @@ export function PeriodFilter({ period, actionLabel = "Filtrar" }: { period: Peri
           <div className="text-xs text-muted-foreground">{period.label}</div>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[150px_150px_auto]">
+      <div className={children ? "grid gap-3 sm:grid-cols-[190px_150px_150px_auto]" : "grid gap-3 sm:grid-cols-[150px_150px_auto]"}>
+        {children}
         <div className="space-y-1.5">
           <Label htmlFor="start">Inicio</Label>
           <Input id="start" name="start" type="date" defaultValue={period.query.start} />
