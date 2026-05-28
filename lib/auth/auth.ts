@@ -10,8 +10,8 @@ const credentialsSchema = z.object({
 });
 
 export const authConfig = {
-  secret: process.env.AUTH_SECRET,
-  trustHost: process.env.AUTH_TRUST_HOST === "true",
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  trustHost: process.env.AUTH_TRUST_HOST === "true" || process.env.VERCEL === "1",
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
