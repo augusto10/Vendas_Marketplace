@@ -43,11 +43,11 @@ export function LoginForm({ redirectTo, hasInitialError }: { redirectTo: string;
     >
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" defaultValue="master@empresa.com" required />
+        <Input id="email" name="email" type="email" autoComplete="email" required />
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Senha</Label>
-        <Input id="password" name="password" type="password" defaultValue="Admin@12345" required />
+        <Input id="password" name="password" type="password" autoComplete="current-password" required />
       </div>
       {error ? (
         <div className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm font-medium text-destructive">
