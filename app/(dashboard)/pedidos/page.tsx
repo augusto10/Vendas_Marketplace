@@ -11,9 +11,10 @@ export const dynamic = "force-dynamic";
 
 export default async function PedidosPage({ searchParams }: { searchParams: Promise<{ start?: string; end?: string; pedido?: string }> }) {
   const params = await searchParams;
-  const period = await resolvePedidosPeriod(params);
+  const hasFilteredPeriod = Boolean(params.start || params.end);
+  const period = parsePeriod(params);
   const pedido = params.pedido?.trim() ?? "";
-  const [periodAdjustments, periodWalletAdjustments] = await Promise.all([
+  const [periodAdjustments, periodWalletAdjustments] = hasFilteredPeriod ? await Promise.all([
     prisma.adjustment.findMany({
       where: { occurredAt: { gte: period.start, lte: period.end } },
       orderBy: { occurredAt: "desc" }
@@ -28,14 +29,14 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
       },
       orderBy: { transactionDate: "desc" }
     })
-  ]);
+  ]) : [[], []] as const;
   const adjustedOrderIds = [
     ...new Set([
       ...periodAdjustments.map((adjustment) => adjustment.orderMarketplaceId).filter((value): value is string => Boolean(value)),
       ...periodWalletAdjustments.map((adjustment) => adjustment.orderMarketplaceId).filter((value): value is string => Boolean(value))
     ])
   ];
-  const orders = await prisma.order.findMany({
+  const orders = hasFilteredPeriod ? await prisma.order.findMany({
     where: {
       AND: [
         {
@@ -51,7 +52,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
     orderBy: { createdAtOrder: "desc" },
     take: 1000,
     include: { items: true, invoices: true, incomes: true }
-  });
+  }) : [];
   const orderIds = orders.map((order) => order.marketplaceId);
   const [linkedAdjustments, linkedWalletAdjustments] = orderIds.length
     ? await Promise.all([
@@ -188,17 +189,30 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
           <Input id="pedido" name="pedido" defaultValue={pedido} placeholder="Numero do pedido" />
         </div>
       </PeriodFilter>
-      <Card>
-        <CardHeader>
-          <CardTitle>Pedidos importados</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {ordersWithAdjustments.toLocaleString("pt-BR")} pedidos com ajustes no periodo filtrado.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <OrdersDetailsTable orders={details} />
-        </CardContent>
-      </Card>
+      {hasFilteredPeriod ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pedidos importados</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {ordersWithAdjustments.toLocaleString("pt-BR")} pedidos com ajustes no periodo filtrado.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <OrdersDetailsTable orders={details} />
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pedidos importados</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border border-dashed bg-slate-50 p-6 text-sm text-muted-foreground">
+              Selecione o periodo e clique em Filtrar para visualizar os pedidos.
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -235,41 +249,4 @@ function normalizeAdjustmentText(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
-}
-
-async function resolvePedidosPeriod(params: { start?: string; end?: string; pedido?: string }) {
-  if (params.start || params.end) return parsePeriod(params);
-
-  const [latestOrder, latestAdjustment, latestWalletAdjustment] = await Promise.all([
-    prisma.order.findFirst({
-      orderBy: [{ paidAt: "desc" }, { createdAtOrder: "desc" }],
-      select: { paidAt: true, createdAtOrder: true }
-    }),
-    prisma.adjustment.findFirst({
-      where: { occurredAt: { not: null } },
-      orderBy: { occurredAt: "desc" },
-      select: { occurredAt: true }
-    }),
-    prisma.walletTransaction.findFirst({
-      where: {
-        transactionType: { contains: "Ajuste", mode: "insensitive" }
-      },
-      orderBy: { transactionDate: "desc" },
-      select: { transactionDate: true }
-    })
-  ]);
-  const latestDates = [
-    latestOrder?.paidAt,
-    latestOrder?.createdAtOrder,
-    latestAdjustment?.occurredAt,
-    latestWalletAdjustment?.transactionDate
-  ].filter((date): date is Date => Boolean(date));
-  const latestDate = latestDates.sort((left, right) => right.getTime() - left.getTime())[0];
-  if (!latestDate) return parsePeriod(params);
-
-  const start = new Date(latestDate.getFullYear(), latestDate.getMonth(), 1);
-  return parsePeriod({
-    start: start.toISOString().slice(0, 10),
-    end: latestDate.toISOString().slice(0, 10)
-  });
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MobileMenu } from "@/components/layout/mobile-menu";
 import { LogoutButton } from "@/features/auth/logout-button";
 import { ThemeToggle } from "@/features/theme/theme-toggle";
 
@@ -21,9 +22,12 @@ export function Topbar({ name, image, roles }: { name?: string | null; image?: s
 
   return (
     <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 px-4 shadow-[0_14px_34px_-32px_rgba(18,32,48,0.65)] backdrop-blur md:px-8">
-      <div className="min-w-0 flex-1">
-        <div className="text-[11px] font-semibold uppercase text-primary">{greeting}</div>
-        <div className="font-title truncate text-lg font-semibold tracking-tight text-slate-950">{displayName}</div>
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <MobileMenu />
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase text-primary">{greeting}</div>
+          <div className="font-title truncate text-lg font-semibold tracking-tight text-slate-950">{displayName}</div>
+        </div>
       </div>
       <div className="flex items-center gap-2 md:gap-3">
         <Button asChild variant="outline" size="sm" className="hidden md:inline-flex">

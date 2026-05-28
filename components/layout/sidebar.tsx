@@ -26,7 +26,7 @@ import {
 import type { PermissionKey } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
-const items: Array<{
+export const sidebarItems: Array<{
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -53,7 +53,7 @@ const items: Array<{
 ];
 
 export function Sidebar({ user }: { user: { name?: string | null; roles: string[]; permissions: string[] } }) {
-  const visibleItems = items;
+  const visibleItems = sidebarItems;
   const sections: Array<{ id: "visao" | "operacao" | "admin"; label: string }> = [
     { id: "visao", label: "Visao" },
     { id: "operacao", label: "Operacao" },
