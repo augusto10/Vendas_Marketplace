@@ -3,6 +3,9 @@ import { fail, handleApiError, ok } from "@/lib/api-response";
 import { importMarketplaceFile } from "@/lib/services/import-service";
 import { hasPermission } from "@/lib/auth/permissions";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const session = await auth();

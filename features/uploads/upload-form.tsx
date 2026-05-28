@@ -194,7 +194,7 @@ function uploadFile(
         }
         resolve();
       } catch {
-        reject(new Error("Resposta invalida ao importar arquivo."));
+        reject(new Error(request.status >= 500 ? "Falha no servidor ao importar arquivo." : "Resposta invalida ao importar arquivo."));
       }
     };
 

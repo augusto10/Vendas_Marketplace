@@ -18,8 +18,12 @@ function pickRows(sheets: ParsedSheet[]) {
   return sheets.flatMap((sheet) => sheet.rows.map((row) => ({ sheet: sheet.name, row: normalizeRow(row) })));
 }
 
+function uploadDirectory() {
+  return process.env.VERCEL ? path.join("/tmp", "uploads") : path.join(process.cwd(), "uploads");
+}
+
 async function persistFile(file: File, checksum: string) {
-  const uploadDir = path.join(process.cwd(), "uploads");
+  const uploadDir = uploadDirectory();
   await mkdir(uploadDir, { recursive: true });
   const extension = file.name.split(".").pop() ?? "bin";
   const storagePath = path.join(uploadDir, `${checksum}.${extension}`);
