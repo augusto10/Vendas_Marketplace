@@ -93,7 +93,7 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
         />
       </div>
 
-      <Card className="hidden overflow-hidden">
+      <Card className="overflow-hidden">
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <CardTitle>Conciliacao por pedido</CardTitle>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
