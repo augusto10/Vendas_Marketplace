@@ -4,36 +4,61 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BadgeCheck,
   Banknote,
   Boxes,
   ClipboardList,
   CreditCard,
+  FileBarChart,
+  History,
   LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
+  Percent,
   ReceiptText,
+  RotateCcw,
   Settings,
+  ShieldCheck,
+  Truck,
   Upload,
   Users
 } from "lucide-react";
 import type { PermissionKey } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
-const items: Array<{ href: string; label: string; icon: React.ComponentType<{ className?: string }>; permission: PermissionKey }> = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
-  { href: "/uploads", label: "Uploads", icon: Upload, permission: "uploads.view" },
-  { href: "/vendas", label: "Vendas", icon: ReceiptText, permission: "finance.view" },
-  { href: "/pedidos", label: "Pedidos", icon: ClipboardList, permission: "finance.view" },
-  { href: "/produtos", label: "Produtos", icon: Boxes, permission: "finance.view" },
-  { href: "/financeiro", label: "Financeiro", icon: Banknote, permission: "finance.view" },
-  { href: "/acelera", label: "Acelera", icon: CreditCard, permission: "finance.view" },
-  { href: "/carteira", label: "Carteira Shopee", icon: Banknote, permission: "finance.view" },
-  { href: "/admin/usuarios", label: "Usuarios", icon: Users, permission: "users.view" },
-  { href: "/configuracoes", label: "Configuracoes", icon: Settings, permission: "system.settings" }
+const items: Array<{
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  permission: PermissionKey;
+  section: "visao" | "operacao" | "admin";
+}> = [
+  { href: "/dashboard", label: "Inicio", icon: LayoutDashboard, permission: "dashboard.view", section: "visao" },
+  { href: "/uploads", label: "Uploads", icon: Upload, permission: "uploads.view", section: "visao" },
+  { href: "/vendas", label: "Vendas", icon: ReceiptText, permission: "finance.view", section: "operacao" },
+  { href: "/pedidos", label: "Pedidos", icon: ClipboardList, permission: "finance.view", section: "operacao" },
+  { href: "/produtos", label: "Produtos", icon: Boxes, permission: "finance.view", section: "operacao" },
+  { href: "/comissoes", label: "Comissoes", icon: Percent, permission: "fees.view", section: "operacao" },
+  { href: "/taxas", label: "Taxas", icon: Percent, permission: "fees.view", section: "operacao" },
+  { href: "/devolucoes", label: "Devolucoes", icon: RotateCcw, permission: "finance.view", section: "operacao" },
+  { href: "/fretes", label: "Fretes", icon: Truck, permission: "finance.view", section: "operacao" },
+  { href: "/fiscal", label: "Fiscal", icon: ShieldCheck, permission: "fiscal.view", section: "operacao" },
+  { href: "/financeiro", label: "Financeiro", icon: Banknote, permission: "finance.view", section: "operacao" },
+  { href: "/acelera", label: "Acelera", icon: CreditCard, permission: "finance.view", section: "operacao" },
+  { href: "/carteira", label: "Carteira Shopee", icon: Banknote, permission: "finance.view", section: "operacao" },
+  { href: "/relatorios", label: "Relatorios", icon: FileBarChart, permission: "finance.export", section: "visao" },
+  { href: "/historico", label: "Historico", icon: History, permission: "uploads.view", section: "visao" },
+  { href: "/admin/usuarios", label: "Usuarios", icon: Users, permission: "users.view", section: "admin" },
+  { href: "/configuracoes", label: "Configuracoes", icon: Settings, permission: "system.settings", section: "admin" }
 ];
 
 export function Sidebar({ user }: { user: { name?: string | null; roles: string[]; permissions: string[] } }) {
   const visibleItems = items;
+  const sections: Array<{ id: "visao" | "operacao" | "admin"; label: string }> = [
+    { id: "visao", label: "Visao" },
+    { id: "operacao", label: "Operacao" },
+    { id: "admin", label: "Administracao" }
+  ];
   const pathname = usePathname();
   const [expanded, setExpanded] = useState(false);
   const displayName = user.name ?? "Usuario";
@@ -51,45 +76,54 @@ export function Sidebar({ user }: { user: { name?: string | null; roles: string[
   }, [expanded, pathname]);
 
   return (
-    <aside className={cn("hidden h-screen shrink-0 border-r bg-card/95 transition-[width] duration-300 lg:sticky lg:top-0 lg:block", expanded ? "w-72" : "w-[76px]")}>
-      <div className={cn("flex h-20 items-center border-b px-3", expanded ? "justify-between" : "justify-center")}>
+    <aside className={cn("hidden h-screen shrink-0 border-r border-slate-700 bg-slate-900 text-slate-100 shadow-[18px_0_48px_-44px_rgba(15,23,42,0.92)] transition-[width] duration-300 lg:sticky lg:top-0 lg:block", expanded ? "w-72" : "w-[78px]")}>
+      <div className={cn("flex h-20 items-center border-b border-slate-700 px-3", expanded ? "justify-between" : "justify-center")}>
         <div className={cn("flex min-w-0 items-center gap-3", !expanded && "hidden")}>
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground shadow-sm">{initials}</div>
+          <div className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-md">{initials}</div>
           <div>
-            <div className="truncate text-sm font-semibold tracking-wide">{displayName}</div>
-            <div className="text-xs text-muted-foreground">Financeiro, fiscal e Shopee</div>
+            <div className="truncate text-sm font-semibold tracking-tight text-slate-50">{displayName}</div>
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
+              <BadgeCheck className="h-3.5 w-3.5 text-primary" />
+              <span>Workspace</span>
+            </div>
           </div>
         </div>
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="grid h-10 w-10 place-items-center rounded-md border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="grid h-10 w-10 place-items-center rounded-md border border-slate-700 bg-slate-800 text-slate-300 shadow-sm transition-colors hover:bg-slate-700 hover:text-slate-100"
           aria-label={expanded ? "Fechar menu lateral" : "Abrir menu lateral"}
           title={expanded ? "Fechar menu" : "Abrir menu"}
         >
           {expanded ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
         </button>
       </div>
-      <nav className="max-h-[calc(100vh-5rem)] space-y-1 overflow-y-auto p-3">
-        {visibleItems.map((item) => {
-          const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={!expanded ? item.label : undefined}
-              className={cn(
-                "flex h-10 items-center gap-3 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                expanded ? "px-3" : "justify-center px-0",
-                active && "bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:text-primary-foreground"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {expanded ? <span className="truncate">{item.label}</span> : null}
-            </Link>
-          );
-        })}
+      <nav className="max-h-[calc(100vh-5rem)] space-y-3 overflow-y-auto p-3">
+        {sections.map((section) => (
+          <div key={section.id} className="space-y-1.5">
+            {expanded ? <div className="px-2 text-[11px] font-semibold uppercase text-slate-400">{section.label}</div> : null}
+            {visibleItems.filter((item) => item.section === section.id).map((item) => {
+              const Icon = item.icon;
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={!expanded ? item.label : undefined}
+                  className={cn(
+                    "group relative flex h-10 items-center gap-3 rounded-md text-sm font-semibold text-slate-300 transition-all hover:bg-slate-800 hover:text-slate-100",
+                    expanded ? "px-3" : "justify-center px-0",
+                    active && "bg-primary text-primary-foreground shadow-md hover:bg-primary hover:text-primary-foreground"
+                  )}
+                >
+                  {active ? <span className="absolute left-0 top-1.5 h-7 w-1 rounded-r-full bg-slate-900/60" /> : null}
+                  <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary-foreground" : "text-slate-400 group-hover:text-slate-100")} />
+                  {expanded ? <span className="truncate">{item.label}</span> : null}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
     </aside>
   );

@@ -1,5 +1,8 @@
 "use server";
 
+import { randomUUID } from "crypto";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 import { revalidatePath } from "next/cache";
 import type { Session } from "next-auth";
 import bcrypt from "bcryptjs";
@@ -23,6 +26,7 @@ export async function createUserAction(_: unknown, formData: FormData) {
     email: formData.get("email"),
     role: formData.get("role")
   });
+  const imageUrl = await saveUserImage(formData.get("imageFile"));
 
   const role = await prisma.role.findUnique({ where: { slug: parsed.role } });
   if (!role) throw new Error("Cargo nao encontrado.");
@@ -32,10 +36,11 @@ export async function createUserAction(_: unknown, formData: FormData) {
 
   const user = await prisma.user.upsert({
     where: { email: parsed.email },
-    update: { name: parsed.name, status: "ACTIVE" },
+    update: { name: parsed.name, ...(imageUrl ? { imageUrl } : {}), status: "ACTIVE" },
     create: {
       name: parsed.name,
       email: parsed.email,
+      imageUrl,
       passwordHash: await bcrypt.hash("Temp@12345", 12)
     }
   });
@@ -91,6 +96,8 @@ export async function updateUserAction(formData: FormData) {
     status: formData.get("status"),
     password: formData.get("password") || undefined
   });
+  const uploadedImageUrl = await saveUserImage(formData.get("imageFile"));
+  const currentImageUrl = String(formData.get("currentImageUrl") ?? "") || null;
 
   const [target, role] = await Promise.all([
     prisma.user.findUnique({
@@ -116,6 +123,7 @@ export async function updateUserAction(formData: FormData) {
     data: {
       name: parsed.name,
       email: parsed.email,
+      imageUrl: uploadedImageUrl ?? currentImageUrl,
       status: parsed.status,
       ...(parsed.password ? { passwordHash: await bcrypt.hash(parsed.password, 12) } : {})
     }
@@ -133,6 +141,27 @@ export async function updateUserAction(formData: FormData) {
     metadata: { email: parsed.email, role: parsed.role, passwordUpdated: Boolean(parsed.password) }
   });
   revalidatePath("/admin/usuarios");
+}
+
+async function saveUserImage(value: FormDataEntryValue | null) {
+  if (!(value instanceof File) || !value.size) return null;
+  if (!value.type.startsWith("image/")) throw new Error("Envie um arquivo de imagem valido.");
+  if (value.size > 5 * 1024 * 1024) throw new Error("A imagem deve ter no maximo 5 MB.");
+
+  const extensionByType: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif"
+  };
+  const extension = extensionByType[value.type] ?? "jpg";
+  const uploadDir = path.join(process.cwd(), "public", "uploads", "users");
+  const fileName = `${randomUUID()}.${extension}`;
+
+  await mkdir(uploadDir, { recursive: true });
+  await writeFile(path.join(uploadDir, fileName), Buffer.from(await value.arrayBuffer()));
+
+  return `/uploads/users/${fileName}`;
 }
 
 export async function createRoleAction(formData: FormData) {

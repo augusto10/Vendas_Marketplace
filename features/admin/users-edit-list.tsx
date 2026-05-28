@@ -25,7 +25,7 @@ export function UsersEditList({ users, roles, canEditMaster }: { users: Editable
         const selectedRole = user.roles.find((role) => roles.some((option) => option.slug === role)) ?? roles[0]?.slug ?? "";
 
         return (
-          <form key={user.id} action={updateUserAction} className="grid gap-3 rounded-md border p-4 lg:grid-cols-[1fr_1.2fr_180px_150px_180px_auto]">
+          <form key={user.id} action={updateUserAction} className="grid gap-3 rounded-lg border bg-background/70 p-4 shadow-[0_10px_30px_-26px_rgba(15,23,42,0.75)] lg:grid-cols-[1fr_1.2fr_180px_150px_180px_auto]">
             <input type="hidden" name="userId" value={user.id} />
             <div className="space-y-2">
               <Label htmlFor={`name-${user.id}`}>Nome</Label>
@@ -42,7 +42,7 @@ export function UsersEditList({ users, roles, canEditMaster }: { users: Editable
                 name="role"
                 defaultValue={selectedRole}
                 disabled={!canEdit}
-                className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="form-select"
               >
                 {roles.map((role) => (
                   <option key={role.slug} value={role.slug}>
@@ -58,7 +58,7 @@ export function UsersEditList({ users, roles, canEditMaster }: { users: Editable
                 name="status"
                 defaultValue={user.status}
                 disabled={!canEdit}
-                className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="form-select"
               >
                 <option value="ACTIVE">Ativo</option>
                 <option value="DISABLED">Desativado</option>

@@ -15,7 +15,7 @@ export default async function TaxasPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Taxas" description="Taxas por tipo, novas taxas detectadas e pendencias de classificacao." />
+      <PageHeader title="Taxas e tarifas" description="Taxas por tipo, novas ocorrencias detectadas e pendencias de classificacao." />
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-3">
         {report.totals.map((row) => (

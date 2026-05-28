@@ -15,6 +15,9 @@ export type DashboardMetrics = {
   commission: number;
   serviceFee: number;
   affiliateCommissionFee: number;
+  fees: number;
+  freight: number;
+  refunds: number;
   icms: number;
   difal: number;
 };
@@ -34,6 +37,9 @@ export async function getDashboardMetrics(period: Period, dateMode: SalesConcili
     commission: summary.commission,
     serviceFee: summary.serviceFee,
     affiliateCommissionFee: summary.affiliateCommissionFee,
+    fees: summary.fees,
+    freight: summary.freight,
+    refunds: summary.refunds,
     icms: summary.icms,
     difal: summary.difal
   };

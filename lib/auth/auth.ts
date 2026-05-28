@@ -41,10 +41,16 @@ export const authConfig = {
         const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!valid) return null;
 
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() }
+        });
+
         return {
           id: user.id,
           name: user.name,
           email: user.email,
+          image: user.imageUrl,
           roles: user.roles.map((entry) => entry.role.slug),
           permissions: user.roles.flatMap((entry) => entry.role.permissions.map((item) => item.permission.key))
         };
@@ -54,6 +60,7 @@ export const authConfig = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        token.picture = user.image;
         token.roles = "roles" in user ? user.roles : [];
         token.permissions = "permissions" in user ? user.permissions : [];
       }
@@ -62,6 +69,7 @@ export const authConfig = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub ?? "";
+        session.user.image = token.picture ?? null;
         session.user.roles = (token.roles as string[]) ?? [];
         session.user.permissions = (token.permissions as string[]) ?? [];
       }

@@ -22,7 +22,7 @@ export default async function ComissoesPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Comissoes" description="Comissao Shopee, taxa de servico, taxa de transacao e afiliados por pedido/SKU." />
+      <PageHeader title="Comissoes e descontos" description="Comissao Shopee, taxa de servico, taxa de transacao e afiliados por pedido/SKU." />
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-4">
         <Card><CardHeader><CardTitle>Comissao</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(commission)}</CardContent></Card>

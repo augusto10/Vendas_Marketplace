@@ -21,7 +21,7 @@ export default async function AceleraPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Shopee Acelera" description="Antecipacoes, taxa de servico, valores recebidos, reembolsos e vencimentos." />
+      <PageHeader title="Shopee Acelera" description="Antecipacoes, taxas de servico, valores recebidos, reembolsos e vencimentos." />
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-4">
         <Card><CardHeader><CardTitle>Recebido</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(received)}</CardContent></Card>

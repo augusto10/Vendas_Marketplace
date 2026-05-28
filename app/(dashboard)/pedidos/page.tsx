@@ -11,28 +11,102 @@ export const dynamic = "force-dynamic";
 
 export default async function PedidosPage({ searchParams }: { searchParams: Promise<{ start?: string; end?: string; pedido?: string }> }) {
   const params = await searchParams;
-  const period = parsePeriod(params);
+  const period = await resolvePedidosPeriod(params);
   const pedido = params.pedido?.trim() ?? "";
+  const [periodAdjustments, periodWalletAdjustments] = await Promise.all([
+    prisma.adjustment.findMany({
+      where: { occurredAt: { gte: period.start, lte: period.end } },
+      orderBy: { occurredAt: "desc" }
+    }),
+    prisma.walletTransaction.findMany({
+      where: {
+        transactionDate: { gte: period.start, lte: period.end },
+        OR: [
+          { transactionType: { contains: "Ajuste", mode: "insensitive" } },
+          { description: { contains: "Ajuste", mode: "insensitive" } }
+        ]
+      },
+      orderBy: { transactionDate: "desc" }
+    })
+  ]);
+  const adjustedOrderIds = [
+    ...new Set([
+      ...periodAdjustments.map((adjustment) => adjustment.orderMarketplaceId).filter((value): value is string => Boolean(value)),
+      ...periodWalletAdjustments.map((adjustment) => adjustment.orderMarketplaceId).filter((value): value is string => Boolean(value))
+    ])
+  ];
   const orders = await prisma.order.findMany({
     where: {
       AND: [
-        { OR: [{ createdAtOrder: { gte: period.start, lte: period.end } }, { paidAt: { gte: period.start, lte: period.end } }] },
+        {
+          OR: [
+            { createdAtOrder: { gte: period.start, lte: period.end } },
+            { paidAt: { gte: period.start, lte: period.end } },
+            ...(adjustedOrderIds.length ? [{ marketplaceId: { in: adjustedOrderIds } }] : [])
+          ]
+        },
         pedido ? { marketplaceId: { contains: pedido, mode: "insensitive" } } : {}
       ]
     },
     orderBy: { createdAtOrder: "desc" },
-    take: 200,
+    take: 1000,
     include: { items: true, invoices: true, incomes: true }
   });
   const orderIds = orders.map((order) => order.marketplaceId);
-  const adjustments = orderIds.length
-    ? await prisma.adjustment.findMany({
-      where: { orderMarketplaceId: { in: orderIds } },
-      orderBy: { occurredAt: "desc" }
-    })
-    : [];
-  const adjustmentsByOrder = new Map<string, typeof adjustments>();
-  for (const adjustment of adjustments) {
+  const [linkedAdjustments, linkedWalletAdjustments] = orderIds.length
+    ? await Promise.all([
+      prisma.adjustment.findMany({
+        where: { orderMarketplaceId: { in: orderIds } },
+        orderBy: { occurredAt: "desc" }
+      }),
+      prisma.walletTransaction.findMany({
+        where: {
+          orderMarketplaceId: { in: orderIds },
+          OR: [
+            { transactionType: { contains: "Ajuste", mode: "insensitive" } },
+            { description: { contains: "Ajuste", mode: "insensitive" } }
+          ]
+        },
+        orderBy: { transactionDate: "desc" }
+      })
+    ])
+    : [[], []] as const;
+  const allAdjustments = mergeAdjustments([
+    ...periodAdjustments.map((adjustment) => ({
+      id: `adjustment-${adjustment.id}`,
+      orderMarketplaceId: adjustment.orderMarketplaceId,
+      occurredAt: adjustment.occurredAt,
+      description: adjustment.description || "Ajuste",
+      reason: adjustment.reason || "-",
+      amount: Number(adjustment.amount ?? 0)
+    })),
+    ...linkedAdjustments.map((adjustment) => ({
+      id: `adjustment-${adjustment.id}`,
+      orderMarketplaceId: adjustment.orderMarketplaceId,
+      occurredAt: adjustment.occurredAt,
+      description: adjustment.description || "Ajuste",
+      reason: adjustment.reason || "-",
+      amount: Number(adjustment.amount ?? 0)
+    })),
+    ...periodWalletAdjustments.map((adjustment) => ({
+      id: `wallet-${adjustment.id}`,
+      orderMarketplaceId: adjustment.orderMarketplaceId,
+      occurredAt: adjustment.transactionDate,
+      description: adjustment.description || adjustment.transactionType || "Ajuste",
+      reason: adjustment.transactionType || "-",
+      amount: Number(adjustment.amount ?? adjustment.adjustmentValue ?? 0)
+    })),
+    ...linkedWalletAdjustments.map((adjustment) => ({
+      id: `wallet-${adjustment.id}`,
+      orderMarketplaceId: adjustment.orderMarketplaceId,
+      occurredAt: adjustment.transactionDate,
+      description: adjustment.description || adjustment.transactionType || "Ajuste",
+      reason: adjustment.transactionType || "-",
+      amount: Number(adjustment.amount ?? adjustment.adjustmentValue ?? 0)
+    }))
+  ]);
+  const adjustmentsByOrder = new Map<string, typeof allAdjustments>();
+  for (const adjustment of allAdjustments) {
     const key = adjustment.orderMarketplaceId ?? "";
     if (!key) continue;
     const current = adjustmentsByOrder.get(key) ?? [];
@@ -72,7 +146,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
       carrier: order.carrier || "-",
       state: order.state || order.invoices[0]?.state || "-",
       customerName: order.buyerUsername,
-      status: order.paidAt ? "Pago" : "Pendente",
+      status: order.paidAt ? "Pago" as const : "Pendente" as const,
       shopeeGross,
       received,
       commission,
@@ -100,11 +174,14 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
       })),
       products
     };
+  }).sort((left, right) => {
+    if (left.adjustments.length !== right.adjustments.length) return right.adjustments.length - left.adjustments.length;
+    return new Date(right.createdAtOrder ?? right.paidAt ?? 0).getTime() - new Date(left.createdAtOrder ?? left.paidAt ?? 0).getTime();
   });
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Pedidos" description="Consulta operacional de pedidos, conciliacao fiscal/financeira e sinais de pendencia." />
+      <PageHeader title="Pedidos importados" description="Consulta operacional de pedidos, conciliacao fiscal e financeira, notas e ajustes vinculados." />
       <PeriodFilter period={period}>
         <div className="space-y-1.5">
           <Label htmlFor="pedido">Pedido</Label>
@@ -124,4 +201,75 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
       </Card>
     </div>
   );
+}
+
+type AdjustmentAlert = {
+  id: string;
+  orderMarketplaceId: string | null;
+  occurredAt: Date | null;
+  description: string;
+  reason: string;
+  amount: number;
+};
+
+function mergeAdjustments(adjustments: AdjustmentAlert[]) {
+  return [...new Map(adjustments.map((adjustment) => [adjustmentKey(adjustment), adjustment])).values()]
+    .sort((left, right) => (right.occurredAt?.getTime() ?? 0) - (left.occurredAt?.getTime() ?? 0));
+}
+
+function adjustmentKey(adjustment: AdjustmentAlert) {
+  const sourceId = adjustment.id.replace(/^(adjustment|wallet)-/, "");
+  const order = normalizeAdjustmentText(adjustment.orderMarketplaceId || "sem-pedido");
+  const date = adjustment.occurredAt?.toISOString().slice(0, 10) ?? "sem-data";
+  const amount = adjustment.amount.toFixed(2);
+  const description = normalizeAdjustmentText(adjustment.description);
+  const reason = normalizeAdjustmentText(adjustment.reason);
+
+  return `${order}|${date}|${amount}|${description || reason || sourceId}`;
+}
+
+function normalizeAdjustmentText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+async function resolvePedidosPeriod(params: { start?: string; end?: string; pedido?: string }) {
+  if (params.start || params.end) return parsePeriod(params);
+
+  const [latestOrder, latestAdjustment, latestWalletAdjustment] = await Promise.all([
+    prisma.order.findFirst({
+      orderBy: [{ paidAt: "desc" }, { createdAtOrder: "desc" }],
+      select: { paidAt: true, createdAtOrder: true }
+    }),
+    prisma.adjustment.findFirst({
+      where: { occurredAt: { not: null } },
+      orderBy: { occurredAt: "desc" },
+      select: { occurredAt: true }
+    }),
+    prisma.walletTransaction.findFirst({
+      where: {
+        transactionType: { contains: "Ajuste", mode: "insensitive" }
+      },
+      orderBy: { transactionDate: "desc" },
+      select: { transactionDate: true }
+    })
+  ]);
+  const latestDates = [
+    latestOrder?.paidAt,
+    latestOrder?.createdAtOrder,
+    latestAdjustment?.occurredAt,
+    latestWalletAdjustment?.transactionDate
+  ].filter((date): date is Date => Boolean(date));
+  const latestDate = latestDates.sort((left, right) => right.getTime() - left.getTime())[0];
+  if (!latestDate) return parsePeriod(params);
+
+  const start = new Date(latestDate.getFullYear(), latestDate.getMonth(), 1);
+  return parsePeriod({
+    start: start.toISOString().slice(0, 10),
+    end: latestDate.toISOString().slice(0, 10)
+  });
 }

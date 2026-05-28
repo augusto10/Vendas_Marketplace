@@ -32,7 +32,7 @@ export function UserForm({ roles }: UserFormProps) {
   });
 
   return (
-    <form action={action} className="grid gap-3 md:grid-cols-[1fr_1fr_180px_auto]">
+    <form action={action} encType="multipart/form-data" className="grid gap-4 sm:grid-cols-2">
       <div className="space-y-2">
         <Label>Nome</Label>
         <Input {...form.register("name")} placeholder="Novo usuario" />
@@ -41,11 +41,15 @@ export function UserForm({ roles }: UserFormProps) {
         <Label>Email</Label>
         <Input {...form.register("email")} type="email" placeholder="usuario@empresa.com" />
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2 sm:col-span-2">
+        <Label>Foto</Label>
+        <Input name="imageFile" type="file" accept="image/*" />
+      </div>
+      <div className="space-y-2 sm:col-span-2">
         <Label>Cargo</Label>
         <select
           {...form.register("role")}
-          className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="form-select"
           disabled={!roles.length}
         >
           {roles.map((role) => (
@@ -55,10 +59,10 @@ export function UserForm({ roles }: UserFormProps) {
           ))}
         </select>
       </div>
-      <Button className="self-end" type="submit" disabled={pending}>
+      <Button className="justify-self-end sm:col-span-2" type="submit" disabled={pending}>
         {pending ? "Criando" : "Criar usuario"}
       </Button>
-      {state?.message ? <div className="md:col-span-4 rounded-md border bg-muted p-3 text-sm">{state.message}</div> : null}
+      {state?.message ? <div className="rounded-md border bg-muted/70 p-3 text-sm sm:col-span-2">{state.message}</div> : null}
     </form>
   );
 }

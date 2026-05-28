@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/page-header";
 import { createRoleAction } from "@/lib/services/admin-service";
 
 export const dynamic = "force-dynamic";
@@ -13,12 +14,9 @@ export default async function PermissoesPage() {
   const permissions = await prisma.permission.findMany({ orderBy: [{ module: "asc" }, { action: "asc" }] });
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Cargos e permissoes</h1>
-        <p className="text-sm text-muted-foreground">RBAC granular por modulo, validado no backend.</p>
-      </div>
-      <Card>
-        <CardHeader><CardTitle>Novo cargo personalizado</CardTitle></CardHeader>
+      <PageHeader title="Cargos e permissoes" description="Controle de acesso por modulo, validado no backend." />
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-muted/20"><CardTitle>Novo cargo personalizado</CardTitle></CardHeader>
         <CardContent>
           <form action={createRoleAction} className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
@@ -27,7 +25,7 @@ export default async function PermissoesPage() {
             </div>
             <div className="grid gap-2 md:grid-cols-3">
               {permissions.map((permission) => (
-                <label key={permission.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                <label key={permission.id} className="flex items-center gap-2 rounded-md border bg-background p-2 text-sm transition-colors hover:bg-muted/60">
                   <input type="checkbox" name="permissions" value={permission.key} />
                   {permission.key}
                 </label>
@@ -39,13 +37,13 @@ export default async function PermissoesPage() {
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
         {roles.map((role) => (
-          <Card key={role.id}>
-            <CardHeader>
+          <Card key={role.id} className="metric-card">
+            <CardHeader className="border-b bg-muted/20">
               <CardTitle>{role.name}</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               {role.permissions.map((entry) => (
-                <Badge key={entry.permissionId}>{entry.permission.key}</Badge>
+                <Badge key={entry.permissionId} className="border-primary/15 bg-primary/10 text-primary">{entry.permission.key}</Badge>
               ))}
             </CardContent>
           </Card>

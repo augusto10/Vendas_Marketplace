@@ -17,11 +17,11 @@ export default async function ProdutosPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Produtos" description="Ranking por SKU, faturamento, comissao, devolucoes e recorrencia nas importacoes Income." />
+      <PageHeader title="Produtos vendidos" description="Ranking por SKU, faturamento, comissao, devolucoes e recorrencia nas importacoes Income." />
       <PeriodFilter period={period} />
       <Card>
         <CardHeader>
-          <CardTitle>Top 5 produtos campeoes de vendas</CardTitle>
+          <CardTitle>Top 5 produtos mais vendidos</CardTitle>
         </CardHeader>
         <CardContent>
           {topSalesProducts.length ? (

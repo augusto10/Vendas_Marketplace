@@ -29,7 +29,7 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
   const statusHref = (targetStatus: string) => `/vendas?start=${period.query.start}&end=${period.query.end}&dateMode=${dateMode}&status=${targetStatus}&page=1`;
   return (
     <div className="space-y-6">
-      <PageHeader title="Vendas">
+      <PageHeader title="Vendas" description="Compare notas emitidas, pedidos Shopee, pagamentos, taxas e diferencas por periodo.">
         <Button asChild variant="outline">
           <a href={`/api/v1/reports?type=sales&format=xlsx&start=${period.query.start}&end=${period.query.end}&dateMode=${dateMode}`}>
             <Download className="h-4 w-4" />
@@ -47,7 +47,7 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
             id="dateMode"
             name="dateMode"
             defaultValue={dateMode}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="form-select"
           >
             <option value="erp">{dateModeLabels.erp.label}</option>
             <option value="sale">{dateModeLabels.sale.label}</option>
@@ -55,7 +55,7 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
           </select>
         </div>
       </PeriodFilter>
-      <div className="text-sm text-muted-foreground">{dateModeLabels[dateMode].description}</div>
+      <div className="rounded-md border bg-muted/35 px-4 py-3 text-sm text-muted-foreground">{dateModeLabels[dateMode].description}</div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <SummaryCard
@@ -93,7 +93,7 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
         />
       </div>
 
-      <Card>
+      <Card className="hidden overflow-hidden">
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <CardTitle>Conciliacao por pedido</CardTitle>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -138,8 +138,8 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
                 <TableHead>Venda Shopee</TableHead>
                 <TableHead>Valor recebido</TableHead>
                 <TableHead>Comissao</TableHead>
-                <TableHead>Taxa serviÃ§o</TableHead>
-                <TableHead>Taxa transaÃ§Ã£o</TableHead>
+                <TableHead>Taxa servico</TableHead>
+                <TableHead>Taxa transacao</TableHead>
                 <TableHead>Afiliados</TableHead>
                 <TableHead>DIFAL</TableHead>
                 <TableHead>Status</TableHead>

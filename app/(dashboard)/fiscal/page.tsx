@@ -17,7 +17,7 @@ export default async function FiscalPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Fiscal" description="ICMS, base de calculo, DIFAL estimado e regras por UF. DIFAL estimado. Validar com contador." />
+      <PageHeader title="Analise fiscal" description="ICMS, base de calculo, DIFAL estimado e regras por UF." />
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-3">
         <Card><CardHeader><CardTitle>Base de calculo</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(base)}</CardContent></Card>

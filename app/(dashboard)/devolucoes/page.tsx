@@ -35,7 +35,7 @@ export default async function DevolucoesPage({ searchParams }: { searchParams: P
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Devolucoes" description="Reembolsos, taxa de devolucao, pedidos/produtos impactados e valores por pedido." />
+      <PageHeader title="Devolucoes e reembolsos" description="Pedidos impactados, valores devolvidos, produtos envolvidos e taxa de devolucao." />
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-3">
         <Card><CardHeader><CardTitle>Valor reembolsado</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(refunds)}</CardContent></Card>

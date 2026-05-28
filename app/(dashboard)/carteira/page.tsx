@@ -22,7 +22,7 @@ export default async function CarteiraPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Carteira Shopee" description="Entradas, saidas, ADS, ajustes, saques e saldo por transacao." />
+      <PageHeader title="Carteira Shopee" description="Entradas, saidas, anuncios, ajustes, saques e saldo por transacao." />
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-4">
         <Card><CardHeader><CardTitle>Entradas</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(entries)}</CardContent></Card>

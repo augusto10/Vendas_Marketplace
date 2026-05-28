@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UploadForm } from "@/features/uploads/upload-form";
@@ -14,54 +15,90 @@ export default async function UploadsPage() {
     take: 50,
     include: { uploadedBy: { select: { name: true } } }
   });
+  const completed = uploads.filter((upload) => upload.status === "COMPLETED").length;
+  const processing = uploads.filter((upload) => upload.status === "PROCESSING").length;
+  const failed = uploads.filter((upload) => upload.status === "FAILED").length;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Uploads" />
-      <Card>
+      <PageHeader title="Importacao de planilhas" description="Envie arquivos Shopee, acompanhe o processamento e revise o historico recente." />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="metric-card">
+          <CardContent className="p-4">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">Total recente</div>
+            <div className="mt-2 text-2xl font-semibold">{uploads.length}</div>
+          </CardContent>
+        </Card>
+        <Card className="metric-card">
+          <CardContent className="p-4">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">Concluidos</div>
+            <div className="mt-2 text-2xl font-semibold text-emerald-600">{completed}</div>
+          </CardContent>
+        </Card>
+        <Card className="metric-card">
+          <CardContent className="p-4">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">Processando</div>
+            <div className="mt-2 text-2xl font-semibold text-amber-600">{processing}</div>
+          </CardContent>
+        </Card>
+        <Card className="metric-card">
+          <CardContent className="p-4">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">Falhas</div>
+            <div className="mt-2 text-2xl font-semibold text-red-600">{failed}</div>
+          </CardContent>
+        </Card>
+      </div>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-muted/20">
+          <CardTitle>Nova importacao</CardTitle>
+        </CardHeader>
         <CardContent>
           <UploadForm />
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-muted/20">
           <CardTitle>Historico de uploads</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Arquivo</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Usuario</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {uploads.map((upload) => (
-                <TableRow key={upload.id}>
-                  <TableCell>{upload.createdAt.toLocaleString("pt-BR")}</TableCell>
-                  <TableCell className="max-w-[360px] truncate">{upload.originalName}</TableCell>
-                  <TableCell>{upload.type}</TableCell>
-                  <TableCell>
-                    <Badge
-                      className={cn(
-                        upload.status === "COMPLETED" && "bg-emerald-100 text-emerald-700 hover:bg-emerald-100",
-                        upload.status === "FAILED" && "bg-red-100 text-red-700 hover:bg-red-100",
-                        upload.status === "PROCESSING" && "bg-amber-100 text-amber-700 hover:bg-amber-100",
-                        upload.status === "PENDING" && "bg-muted text-muted-foreground hover:bg-muted"
-                      )}
-                    >
-                      {upload.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{upload.uploadedBy?.name ?? "-"}</TableCell>
+          {uploads.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Arquivo</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Usuario</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {uploads.map((upload) => (
+                  <TableRow key={upload.id}>
+                    <TableCell>{upload.createdAt.toLocaleString("pt-BR")}</TableCell>
+                    <TableCell className="max-w-[360px] truncate font-medium">{upload.originalName}</TableCell>
+                    <TableCell>{upload.type}</TableCell>
+                    <TableCell>
+                      <Badge
+                        className={cn(
+                          upload.status === "COMPLETED" && "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50",
+                          upload.status === "FAILED" && "border-red-200 bg-red-50 text-red-700 hover:bg-red-50",
+                          upload.status === "PROCESSING" && "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50",
+                          upload.status === "PENDING" && "bg-muted text-muted-foreground hover:bg-muted"
+                        )}
+                      >
+                        {upload.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{upload.uploadedBy?.name ?? "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <EmptyState title="Nenhum upload registrado" description="Depois da primeira importacao, os arquivos processados aparecem neste historico." />
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 import { UsersTable } from "@/features/admin/users-table";
-import { UsersEditList } from "@/features/admin/users-edit-list";
-import { UserForm } from "@/features/admin/user-form";
 
 export const dynamic = "force-dynamic";
 
@@ -22,20 +21,9 @@ export default async function UsuariosPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Usuarios</h1>
-        <p className="text-sm text-muted-foreground">Gestao preparada para convites, edicao de acessos, senha e trilha de auditoria.</p>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Novo acesso</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <UserForm roles={roleOptions} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
+      <PageHeader title="Usuarios e acessos" description="Gestao de acessos, edicao de perfis, senha e trilha de auditoria." />
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-muted/20">
           <CardTitle>Usuarios cadastrados</CardTitle>
         </CardHeader>
         <CardContent>
@@ -44,29 +32,14 @@ export default async function UsuariosPage() {
               id: user.id,
               name: user.name,
               email: user.email,
+              imageUrl: user.imageUrl,
               status: user.status,
               roles: user.roles.map((entry) => entry.role.slug),
               createdAt: user.createdAt.toLocaleDateString("pt-BR"),
               lastLoginAt: user.lastLoginAt?.toLocaleString("pt-BR") ?? "-"
             }))}
-          />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Editar usuarios</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <UsersEditList
             roles={roleOptions}
             canEditMaster={isMaster}
-            users={users.map((user) => ({
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              status: user.status,
-              roles: user.roles.map((entry) => entry.role.slug)
-            }))}
           />
         </CardContent>
       </Card>

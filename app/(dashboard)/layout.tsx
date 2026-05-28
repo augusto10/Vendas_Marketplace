@@ -9,16 +9,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const user = {
     name: session.user.name,
+    image: session.user.image,
     roles: session.user.roles,
     permissions: session.user.permissions
   };
 
   return (
-    <div className="min-h-screen lg:flex">
+    <div className="min-h-screen bg-transparent lg:flex">
       <Sidebar user={user} />
       <div className="min-w-0 flex-1">
-        <Topbar name={session.user.name} roles={session.user.roles} />
-        <main className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">{children}</main>
+        <Topbar name={session.user.name} image={session.user.image} roles={session.user.roles} />
+        <main className="mx-auto w-full max-w-[1480px] px-4 py-6 md:px-8 lg:px-10">
+          <div className="page-shell">{children}</div>
+        </main>
       </div>
     </div>
   );
