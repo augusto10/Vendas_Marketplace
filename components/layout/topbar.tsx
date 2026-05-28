@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -9,8 +10,7 @@ import { LogoutButton } from "@/features/auth/logout-button";
 import { ThemeToggle } from "@/features/theme/theme-toggle";
 
 export function Topbar({ name, image, roles }: { name?: string | null; image?: string | null; roles: string[] }) {
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  const [greeting, setGreeting] = useState("Bem-vindo");
   const displayName = name ?? "Usuario";
   const visibleRoles = roles.filter((role) => role.toLowerCase() !== "master");
   const initials = displayName
@@ -19,6 +19,11 @@ export function Topbar({ name, image, roles }: { name?: string | null; image?: s
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("") || "U";
+
+  useEffect(() => {
+    const hour = new Date().getHours();
+    setGreeting(hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite");
+  }, []);
 
   return (
     <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 px-4 shadow-[0_14px_34px_-32px_rgba(18,32,48,0.65)] backdrop-blur md:px-8">
