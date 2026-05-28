@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { sidebarItems } from "@/components/layout/sidebar";
+import { sidebarItems } from "@/components/layout/sidebar-items";
 import { cn } from "@/lib/utils";
 
 export function MobileMenu() {
@@ -18,15 +18,15 @@ export function MobileMenu() {
         <Menu className="h-4 w-4" />
       </Button>
       {open ? (
-        <div className="fixed inset-0 z-50 bg-slate-950/45" role="dialog" aria-modal="true">
-          <div className="h-full w-[min(86vw,340px)] overflow-y-auto bg-slate-900 p-4 text-slate-100 shadow-2xl">
+        <div className="fixed inset-0 z-[999] bg-slate-950/55" role="dialog" aria-modal="true">
+          <div className="fixed left-0 top-0 h-dvh w-[86vw] max-w-[360px] overflow-y-auto bg-slate-900 p-4 text-slate-100 shadow-2xl">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="font-title text-lg font-semibold">Menu</div>
               <Button type="button" variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Fechar menu" className="text-slate-100 hover:bg-slate-800">
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <nav className="space-y-1.5">
+            <nav className="grid gap-1.5 pb-8">
               {sidebarItems.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -36,7 +36,7 @@ export function MobileMenu() {
                     href={item.href}
                     onClick={() => setOpen(false)}
                     className={cn(
-                      "flex h-11 items-center gap-3 rounded-md px-3 text-sm font-semibold text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100",
+                      "flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-800 hover:text-slate-100",
                       active && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
                     )}
                   >
