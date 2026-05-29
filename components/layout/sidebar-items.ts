@@ -3,7 +3,6 @@ import {
   Boxes,
   ClipboardList,
   CreditCard,
-  FileBarChart,
   History,
   LayoutDashboard,
   Percent,
@@ -26,7 +25,6 @@ export const sidebarItems: Array<{
 }> = [
   { href: "/dashboard", label: "Inicio", icon: LayoutDashboard, permission: "dashboard.view", section: "visao" },
   { href: "/uploads", label: "Uploads", icon: Upload, permission: "uploads.view", section: "visao" },
-  { href: "/relatorios", label: "Relatorios", icon: FileBarChart, permission: "finance.export", section: "visao" },
   { href: "/historico", label: "Historico", icon: History, permission: "uploads.view", section: "visao" },
   { href: "/vendas", label: "Vendas", icon: ReceiptText, permission: "finance.view", section: "operacao" },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList, permission: "finance.view", section: "operacao" },
