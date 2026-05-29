@@ -1,7 +1,7 @@
 import { CalendarDays } from "lucide-react";
 import type { ReactNode } from "react";
+import { DateInput } from "@/components/date-input";
 import { FilterSubmitButton } from "@/components/filter-submit-button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Period } from "@/lib/period";
 
@@ -21,11 +21,11 @@ export function PeriodFilter({ period, actionLabel = "Filtrar", children }: { pe
         {children}
         <div className="space-y-1.5">
           <Label htmlFor="start">Inicio</Label>
-          <Input id="start" name="start" type="date" defaultValue={period.query.start} />
+          <DateInput id="start" name="start" defaultValue={period.query.start} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="end">Fim</Label>
-          <Input id="end" name="end" type="date" defaultValue={period.query.end} />
+          <DateInput id="end" name="end" defaultValue={period.query.end} />
         </div>
         <FilterSubmitButton label={actionLabel} />
       </div>
