@@ -69,9 +69,9 @@ function SummaryCard({
   tone: "primary" | "accent" | "warning";
 }) {
   const toneClass = {
-    primary: "bg-white text-accent",
-    accent: "bg-white text-accent",
-    warning: "bg-white text-primary"
+    primary: "bg-card text-card-foreground",
+    accent: "bg-card text-card-foreground",
+    warning: "bg-card text-card-foreground"
   }[tone];
   const iconClass = {
     primary: "border-accent/15 bg-accent/10 text-accent",
@@ -79,14 +79,14 @@ function SummaryCard({
     warning: "border-primary/25 bg-primary/10 text-primary"
   }[tone];
   const stripeClass = tone === "primary" ? "bg-accent" : "bg-primary";
-  const titleClass = "text-slate-500";
-  const descriptionClass = "text-slate-500";
-  const valueClass = "text-slate-950";
-  const rowClass = "border-slate-100 bg-slate-50/80 text-slate-500";
-  const rowValueClass = "text-slate-950";
+  const titleClass = "text-muted-foreground";
+  const descriptionClass = "text-muted-foreground";
+  const valueClass = "text-card-foreground";
+  const rowClass = "border-border bg-muted/35 text-muted-foreground";
+  const rowValueClass = "text-card-foreground";
 
   return (
-    <Card className={`group overflow-hidden ${toneClass} shadow-[0_16px_36px_-30px_rgba(18,32,48,0.62)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_42px_-32px_rgba(18,32,48,0.7)]`}>
+    <Card className={`group overflow-hidden ${toneClass} transition-all hover:-translate-y-0.5 hover:border-primary/35`}>
       <div className={`h-1 ${stripeClass}`} />
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-4">

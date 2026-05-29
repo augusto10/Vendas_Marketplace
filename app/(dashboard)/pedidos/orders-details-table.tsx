@@ -79,18 +79,18 @@ export function OrdersDetailsTable({ orders }: { orders: OrderDetails[] }) {
               <TableCell>
                 {order.adjustments.length ? (
                   <div className="space-y-1">
-                    <Badge className="border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100">
+                    <Badge className="border-amber-500/25 bg-amber-500/15 text-amber-300 hover:bg-amber-500/20">
                       <AlertTriangle className="h-3.5 w-3.5" />
                       {order.adjustments.length.toLocaleString("pt-BR")} alerta(s)
                     </Badge>
-                    <div className="max-w-[260px] truncate text-xs text-amber-700">
+                    <div className="max-w-[260px] truncate text-xs text-amber-300">
                       {currency(order.adjustments.reduce((sum, adjustment) => sum + adjustment.amount, 0))} · {order.adjustments[0]?.reason || order.adjustments[0]?.description}
                     </div>
                   </div>
                 ) : "-"}
               </TableCell>
               <TableCell>
-                <Badge className={order.status === "Pago" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" : "bg-amber-100 text-amber-700 hover:bg-amber-100"}>
+                <Badge className={order.status === "Pago" ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20" : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/20"}>
                   {order.status}
                 </Badge>
               </TableCell>
@@ -154,7 +154,7 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
         </div>
 
         {order.adjustments.length ? (
-          <div className="mx-4 mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <div className="mx-4 mb-4 flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/15 p-3 text-sm text-amber-200">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               <div className="font-semibold">Este pedido possui alertas de ajustes.</div>
@@ -237,7 +237,7 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
             <div className="flex items-center justify-between gap-3 border-b p-3 font-medium">
               <span>Produtos</span>
               {order.adjustments.length ? (
-                <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">Pedido com ajuste</Badge>
+                <Badge className="bg-amber-500/15 text-amber-300 hover:bg-amber-500/20">Pedido com ajuste</Badge>
               ) : null}
             </div>
             <div className="overflow-x-auto">

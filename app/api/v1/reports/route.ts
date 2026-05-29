@@ -156,7 +156,7 @@ export async function GET(request: Request) {
       start: url.searchParams.get("start") ?? undefined,
       end: url.searchParams.get("end") ?? undefined
     });
-    const report = await getReportData(url.searchParams.get("type"), period);
+    const report = await getReportData(url.searchParams.get("type"), period, url.searchParams.get("view"));
 
     return reportResponse(format, report.fileName, report.title, report.header, report.rows);
   } catch (error) {

@@ -82,9 +82,9 @@ export default async function UploadsPage() {
                     <TableCell>
                       <Badge
                         className={cn(
-                          upload.status === "COMPLETED" && "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50",
-                          upload.status === "FAILED" && "border-red-200 bg-red-50 text-red-700 hover:bg-red-50",
-                          upload.status === "PROCESSING" && "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50",
+                          upload.status === "COMPLETED" && "border-emerald-500/25 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20",
+                          upload.status === "FAILED" && "border-red-500/25 bg-red-500/15 text-red-300 hover:bg-red-500/20",
+                          upload.status === "PROCESSING" && "border-amber-500/25 bg-amber-500/15 text-amber-300 hover:bg-amber-500/20",
                           upload.status === "PENDING" && "bg-muted text-muted-foreground hover:bg-muted"
                         )}
                       >

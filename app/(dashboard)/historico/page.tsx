@@ -43,9 +43,9 @@ export default async function HistoricoPage() {
                   <TableCell>
                     <Badge
                       className={cn(
-                        upload.status === "COMPLETED" && "bg-emerald-100 text-emerald-700 hover:bg-emerald-100",
-                        upload.status === "FAILED" && "bg-red-100 text-red-700 hover:bg-red-100",
-                        upload.status === "PROCESSING" && "bg-amber-100 text-amber-700 hover:bg-amber-100",
+                        upload.status === "COMPLETED" && "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20",
+                        upload.status === "FAILED" && "bg-red-500/15 text-red-300 hover:bg-red-500/20",
+                        upload.status === "PROCESSING" && "bg-amber-500/15 text-amber-300 hover:bg-amber-500/20",
                         upload.status === "PENDING" && "bg-muted text-muted-foreground hover:bg-muted"
                       )}
                     >

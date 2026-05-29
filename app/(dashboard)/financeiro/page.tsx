@@ -24,9 +24,9 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
       </PageHeader>
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-emerald-100 bg-emerald-50/60"><CardHeader><CardTitle className="text-emerald-800">Entradas carteira</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-emerald-700">{currency(walletIn)}</CardContent></Card>
-        <Card className="border-red-100 bg-red-50/60"><CardHeader><CardTitle className="text-red-800">Saidas carteira</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-red-700">{currency(walletOut)}</CardContent></Card>
-        <Card className="border-emerald-100 bg-emerald-50/60"><CardHeader><CardTitle className="text-emerald-800">Acelera recebido</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-emerald-700">{currency(acceleraReceived)}</CardContent></Card>
+        <Card className="border-emerald-500/25 bg-emerald-950/20"><CardHeader><CardTitle className="text-emerald-300">Entradas carteira</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-emerald-200">{currency(walletIn)}</CardContent></Card>
+        <Card className="border-red-500/25 bg-red-950/20"><CardHeader><CardTitle className="text-red-300">Saidas carteira</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-red-200">{currency(walletOut)}</CardContent></Card>
+        <Card className="border-emerald-500/25 bg-emerald-950/20"><CardHeader><CardTitle className="text-emerald-300">Acelera recebido</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-emerald-200">{currency(acceleraReceived)}</CardContent></Card>
       </div>
       <Card>
         <CardHeader><CardTitle>Carteira Shopee</CardTitle></CardHeader>
@@ -37,21 +37,21 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
               {data.wallet.slice(0, 120).map((row) => {
                 const tone = row.direction === "IN" ? "in" : row.direction === "OUT" ? "out" : "neutral";
                 return (
-                  <TableRow key={row.id} className={cn(tone === "in" && "bg-emerald-50/40 hover:bg-emerald-50", tone === "out" && "bg-red-50/40 hover:bg-red-50")}>
+                  <TableRow key={row.id} className={cn(tone === "in" && "bg-emerald-950/15 hover:bg-emerald-950/25", tone === "out" && "bg-red-950/15 hover:bg-red-950/25")}>
                     <TableCell>{row.transactionDate.toLocaleString("pt-BR")}</TableCell>
                     <TableCell>{row.transactionType}</TableCell>
                     <TableCell>{row.orderMarketplaceId}</TableCell>
                     <TableCell>
                       <span className={cn(
                         "inline-flex rounded-md px-2 py-1 text-xs font-semibold",
-                        tone === "in" && "bg-emerald-100 text-emerald-700",
-                        tone === "out" && "bg-red-100 text-red-700",
-                        tone === "neutral" && "bg-slate-100 text-slate-600"
+                        tone === "in" && "bg-emerald-500/15 text-emerald-300",
+                        tone === "out" && "bg-red-500/15 text-red-300",
+                        tone === "neutral" && "bg-muted text-muted-foreground"
                       )}>
                         {row.direction}
                       </span>
                     </TableCell>
-                    <TableCell className={cn("font-semibold", tone === "in" && "text-emerald-700", tone === "out" && "text-red-700")}>{currency(row.amount.toString())}</TableCell>
+                    <TableCell className={cn("font-semibold", tone === "in" && "text-emerald-300", tone === "out" && "text-red-300")}>{currency(row.amount.toString())}</TableCell>
                     <TableCell>{row.status}</TableCell>
                   </TableRow>
                 );

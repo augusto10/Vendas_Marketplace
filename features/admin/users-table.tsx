@@ -234,7 +234,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 
 function StatusBadge({ status }: { status: UserRow["status"] }) {
   return (
-    <Badge className={status === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}>
+    <Badge className={status === "ACTIVE" ? "border-emerald-500/25 bg-emerald-500/15 text-emerald-300" : "border-red-500/25 bg-red-500/15 text-red-300"}>
       {status === "ACTIVE" ? "Ativo" : "Desativado"}
     </Badge>
   );

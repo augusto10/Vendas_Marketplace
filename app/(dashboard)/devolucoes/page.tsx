@@ -8,18 +8,36 @@ import { currency, percent } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+const returnWalletTerms = [
+  { description: { contains: "devolu", mode: "insensitive" as const } },
+  { description: { contains: "reembolso", mode: "insensitive" as const } },
+  { description: { contains: "return/refund", mode: "insensitive" as const } },
+  { transactionType: { contains: "devolu", mode: "insensitive" as const } },
+  { transactionType: { contains: "reembolso", mode: "insensitive" as const } },
+  { transactionType: { contains: "return/refund", mode: "insensitive" as const } }
+];
+
 export default async function DevolucoesPage({ searchParams }: { searchParams: Promise<{ start?: string; end?: string }> }) {
   const period = parsePeriod(await searchParams);
   const rows = await prisma.shopeeIncome.findMany({
-    where: { orderCreatedAt: { gte: period.start, lte: period.end }, sku: { not: "-" } },
+    where: {
+      orderCreatedAt: { gte: period.start, lte: period.end },
+      sku: { not: "-" },
+      OR: [
+        { refundAmount: { not: 0 } },
+        { buyerRefundedAmount: { not: 0 } },
+        { sellerReturnFee: { not: 0 } },
+        { reverseShippingFee: { not: 0 } }
+      ]
+    },
     orderBy: { orderCreatedAt: "desc" },
     take: 500
   });
   const walletAdjustments = await prisma.walletTransaction.findMany({
     where: {
       transactionDate: { gte: period.start, lte: period.end },
-      transactionType: "Ajuste",
-      direction: "OUT"
+      direction: "OUT",
+      OR: returnWalletTerms
     },
     orderBy: { transactionDate: "desc" },
     take: 500
@@ -27,7 +45,7 @@ export default async function DevolucoesPage({ searchParams }: { searchParams: P
   const refunds =
     Math.abs(rows.reduce((sum, row) => sum + Number(row.refundAmount ?? 0) + Number(row.buyerRefundedAmount ?? 0), 0)) +
     walletAdjustments.reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
-  const returnedOrders = new Set(rows.filter((row) => Number(row.refundAmount ?? 0) || Number(row.buyerRefundedAmount ?? 0)).map((row) => row.orderMarketplaceId));
+  const returnedOrders = new Set(rows.map((row) => row.orderMarketplaceId));
   for (const row of walletAdjustments) {
     if (row.orderMarketplaceId && row.orderMarketplaceId !== "-") returnedOrders.add(row.orderMarketplaceId);
   }
@@ -48,7 +66,7 @@ export default async function DevolucoesPage({ searchParams }: { searchParams: P
           <Table>
             <TableHeader><TableRow><TableHead>Data pedido</TableHead><TableHead>Data pagamento</TableHead><TableHead>Pedido</TableHead><TableHead>SKU</TableHead><TableHead>Produto</TableHead><TableHead>Reembolso</TableHead><TableHead>Reembolsado ao comprador</TableHead></TableRow></TableHeader>
             <TableBody>
-              {rows.filter((row) => Number(row.refundAmount ?? 0) || Number(row.buyerRefundedAmount ?? 0)).map((row) => (
+              {rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{row.orderCreatedAt?.toLocaleDateString("pt-BR") ?? "-"}</TableCell>
                   <TableCell>{row.paymentCompletedAt?.toLocaleDateString("pt-BR") ?? "-"}</TableCell>

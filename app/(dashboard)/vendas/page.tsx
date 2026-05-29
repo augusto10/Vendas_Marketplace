@@ -166,8 +166,8 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
                   <TableCell>
                     <Badge
                       className={cn(
-                        row.status === "Conciliado" && "bg-emerald-100 text-emerald-700 hover:bg-emerald-100",
-                        row.status !== "Conciliado" && "bg-amber-100 text-amber-700 hover:bg-amber-100"
+                        row.status === "Conciliado" && "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20",
+                        row.status !== "Conciliado" && "bg-amber-500/15 text-amber-300 hover:bg-amber-500/20"
                       )}
                     >
                       {row.status === "Conciliado" ? "Concluido" : "Pendente"}

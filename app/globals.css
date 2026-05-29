@@ -49,7 +49,8 @@
 body {
   min-height: 100vh;
   background:
-    linear-gradient(180deg, hsl(214 28% 96%) 0%, hsl(var(--background)) 58%, hsl(214 20% 91%) 100%);
+    radial-gradient(circle at top left, hsl(214 32% 18% / 0.55), transparent 34rem),
+    linear-gradient(180deg, hsl(222 22% 12%) 0%, hsl(var(--background)) 58%, hsl(222 24% 9%) 100%);
   color: hsl(var(--foreground));
   font-family: var(--font-body), Arial, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
@@ -57,7 +58,9 @@ body {
 }
 
 .dark body {
-  background: hsl(var(--background));
+  background:
+    radial-gradient(circle at top left, hsl(214 32% 18% / 0.55), transparent 34rem),
+    linear-gradient(180deg, hsl(222 22% 12%) 0%, hsl(var(--background)) 58%, hsl(222 24% 9%) 100%);
 }
 
 ::selection {
@@ -70,19 +73,19 @@ body {
   }
 
   .data-surface {
-    @apply rounded-md border border-slate-200/80 bg-card shadow-[0_14px_32px_-26px_rgba(18,32,48,0.55)];
+    @apply rounded-md border border-border bg-card shadow-[0_18px_40px_-30px_rgba(0,0,0,0.85)];
   }
 
   .metric-card {
-    @apply rounded-md border border-slate-200/80 bg-card shadow-[0_16px_34px_-28px_rgba(18,32,48,0.62)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_42px_-30px_rgba(18,32,48,0.68)];
+    @apply rounded-md border border-border bg-card shadow-[0_18px_42px_-32px_rgba(0,0,0,0.9)] transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-[0_24px_48px_-34px_rgba(0,0,0,0.92)];
   }
 
   .premium-panel {
-    @apply rounded-md border border-slate-200/80 bg-card shadow-[0_18px_42px_-32px_rgba(18,32,48,0.68)];
+    @apply rounded-md border border-border bg-card shadow-[0_18px_42px_-32px_rgba(0,0,0,0.9)];
   }
 
   .form-select {
-    @apply flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-offset-background transition-colors focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-offset-background transition-colors focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .page-shell {

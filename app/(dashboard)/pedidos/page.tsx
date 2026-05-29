@@ -207,7 +207,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
             <CardTitle>Pedidos importados</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border border-dashed bg-slate-50 p-6 text-sm text-muted-foreground">
+            <div className="rounded-md border border-dashed bg-muted/35 p-6 text-sm text-muted-foreground">
               Selecione o periodo e clique em Filtrar para visualizar os pedidos.
             </div>
           </CardContent>

@@ -36,7 +36,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         />
         <PeriodFilter period={period}>
           <div className="space-y-1.5">
-            <label htmlFor="dateMode" className="text-sm font-semibold leading-none text-slate-900">
+            <label htmlFor="dateMode" className="text-sm font-semibold leading-none text-foreground">
               Ver relatorio por
             </label>
             <select
@@ -51,7 +51,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </select>
           </div>
         </PeriodFilter>
-        <div className="rounded-md border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-slate-600 shadow-[0_12px_26px_-28px_rgba(18,32,48,0.5)]">
+        <div className="rounded-md border border-border bg-card/70 px-4 py-3 text-sm text-muted-foreground shadow-[0_14px_30px_-28px_rgba(0,0,0,0.9)]">
           {dateModeLabels[dateMode].description}
         </div>
       </section>
@@ -60,13 +60,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       <div className="grid gap-4">
         <Card className="overflow-hidden">
-          <CardHeader className="border-b border-slate-100 bg-white">
+          <CardHeader className="border-b border-border bg-muted/20">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle>Ranking por UF</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">Distribuicao de vendas e DIFAL por estado no periodo selecionado.</p>
               </div>
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+              <div className="rounded-md border border-border bg-muted/35 px-3 py-1 text-xs font-semibold text-muted-foreground">
                 {states.length} UFs
               </div>
             </div>

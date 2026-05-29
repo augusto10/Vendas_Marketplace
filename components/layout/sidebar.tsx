@@ -19,7 +19,7 @@ export function Sidebar({ user }: { user: { name?: string | null; roles: string[
     { id: "admin", label: "Administracao" }
   ];
   const pathname = usePathname();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const displayName = user.name ?? "Usuario";
   const initials = displayName
     .split(" ")
@@ -30,7 +30,7 @@ export function Sidebar({ user }: { user: { name?: string | null; roles: string[
 
   useEffect(() => {
     if (!expanded) return;
-    const timer = window.setTimeout(() => setExpanded(false), 12000);
+    const timer = window.setTimeout(() => setExpanded(false), 20000);
     return () => window.clearTimeout(timer);
   }, [expanded, pathname]);
 

@@ -30,6 +30,14 @@ export type ReportData = ReportDefinition & {
   chart: Array<{ label: string; value: number }>;
 };
 
+export type ReportView = "detail" | "daily" | "cumulative";
+
+export type ReportViewOption = {
+  value: ReportView;
+  label: string;
+  description: string;
+};
+
 export const REPORT_CATALOG: ReportDefinition[] = [
   { type: "sales", title: "Vendas", description: "Notas, pedidos, ICMS, DIFAL, frete e unidades.", fileName: "relatorio-vendas" },
   { type: "orders", title: "Pedidos", description: "Pedidos importados, datas, valores, transportadora e status.", fileName: "relatorio-pedidos" },
@@ -49,7 +57,36 @@ export function getReportDefinition(type: string | null | undefined) {
   return REPORT_CATALOG.find((report) => report.type === type) ?? REPORT_CATALOG[0];
 }
 
-export async function getReportData(typeInput: string | null | undefined, period: Period): Promise<ReportData> {
+export function getReportViewOptions(typeInput: string | null | undefined): ReportViewOption[] {
+  const report = getReportDefinition(typeInput);
+  const noun = {
+    sales: "vendas",
+    orders: "pedidos",
+    products: "receita",
+    commissions: "comissoes",
+    fees: "taxas",
+    returns: "devolucoes",
+    freight: "fretes",
+    fiscal: "valor fiscal",
+    financial: "movimentacao",
+    wallet: "movimentacao da carteira",
+    accelera: "Acelera",
+    uploads: "importacoes"
+  }[report.type];
+
+  return [
+    { value: "detail", label: "Detalhado", description: "Linhas originais do relatorio, com o maior nivel de detalhe." },
+    { value: "daily", label: `Total diario de ${noun}`, description: "Agrupa os valores por dia dentro do periodo selecionado." },
+    { value: "cumulative", label: `Acumulado de ${noun}`, description: "Mostra a evolucao acumulada dia a dia no periodo." }
+  ];
+}
+
+export async function getReportData(typeInput: string | null | undefined, period: Period, viewInput: string | null | undefined = "detail"): Promise<ReportData> {
+  const report = await getRawReportData(typeInput, period);
+  return applyReportView(report, normalizeReportView(viewInput));
+}
+
+async function getRawReportData(typeInput: string | null | undefined, period: Period): Promise<ReportData> {
   const report = getReportDefinition(typeInput);
 
   if (report.type === "financial") {
@@ -183,6 +220,39 @@ export async function getReportData(typeInput: string | null | undefined, period
     return withCustomChart(report, header, rows, buildDailyObjectChart(invoices, (invoice) => invoice.emissionDate, (invoice) => Number(invoice.totalAmount ?? 0)));
   }
   return withChart(report, header, rows, report.type === "fiscal" ? 7 : 6);
+}
+
+function normalizeReportView(value: string | null | undefined): ReportView {
+  return value === "daily" || value === "cumulative" ? value : "detail";
+}
+
+function applyReportView(report: ReportData, view: ReportView): ReportData {
+  if (view === "detail") return report;
+
+  const dailyRows = report.chart.map((row) => [row.label, row.value]);
+  if (view === "daily") {
+    return {
+      ...report,
+      header: ["data", "total"],
+      rows: dailyRows,
+      totalRows: dailyRows.length,
+      chart: report.chart
+    };
+  }
+
+  let runningTotal = 0;
+  const cumulativeRows = report.chart.map((row) => {
+    runningTotal += row.value;
+    return [row.label, row.value, runningTotal];
+  });
+
+  return {
+    ...report,
+    header: ["data", "total_dia", "total_acumulado"],
+    rows: cumulativeRows,
+    totalRows: cumulativeRows.length,
+    chart: cumulativeRows.map((row) => ({ label: String(row[0]), value: Number(row[2] ?? 0) }))
+  };
 }
 
 function withChart(report: ReportDefinition, header: string[], rows: Array<Array<unknown>>, valueColumn: number, labelColumn = 0): ReportData {

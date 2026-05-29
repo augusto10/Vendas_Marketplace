@@ -7,14 +7,14 @@ import type { Period } from "@/lib/period";
 
 export function PeriodFilter({ period, actionLabel = "Filtrar", children }: { period: Period; actionLabel?: string; children?: ReactNode }) {
   return (
-    <form className="flex flex-col gap-4 rounded-md border border-slate-200/80 bg-white p-4 shadow-[0_14px_30px_-28px_rgba(18,32,48,0.58)] md:flex-row md:items-end md:justify-between">
+    <form className="flex flex-col gap-4 rounded-md border border-border bg-card p-4 shadow-[0_18px_42px_-34px_rgba(0,0,0,0.9)] md:flex-row md:items-end md:justify-between">
       <div className="flex items-center gap-3">
         <div className="grid h-10 w-10 place-items-center rounded-md border border-primary/20 bg-primary/10 text-primary">
           <CalendarDays className="h-5 w-5" />
         </div>
         <div>
-          <div className="text-sm font-semibold tracking-tight text-slate-950">Periodo analisado</div>
-          <div className="text-xs text-slate-500">{period.label}</div>
+          <div className="text-sm font-semibold tracking-tight text-card-foreground">Periodo analisado</div>
+          <div className="text-xs text-muted-foreground">{period.label}</div>
         </div>
       </div>
       <div className={children ? "grid gap-3 sm:grid-cols-[190px_150px_150px_auto]" : "grid gap-3 sm:grid-cols-[150px_150px_auto]"}>
