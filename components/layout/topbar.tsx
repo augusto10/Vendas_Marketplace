@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { MobileMenu } from "@/components/layout/mobile-menu";
 import { LogoutButton } from "@/features/auth/logout-button";
 import { ThemeToggle } from "@/features/theme/theme-toggle";
@@ -35,12 +32,6 @@ export function Topbar({ name, image, roles }: { name?: string | null; image?: s
         </div>
       </div>
       <div className="flex items-center gap-2 md:gap-3">
-        <Button asChild variant="outline" size="sm" className="hidden md:inline-flex">
-          <Link href="/uploads">
-            <Upload className="h-4 w-4" />
-            Importar
-          </Link>
-        </Button>
         <div className="hidden text-right sm:block">
           <div className="mt-1 flex flex-wrap justify-end gap-1">
             {visibleRoles.map((role) => (

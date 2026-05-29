@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import type { FocusEvent } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  BadgeCheck,
-  PanelLeftClose,
-  PanelLeftOpen
-} from "lucide-react";
+import { BadgeCheck } from "lucide-react";
 import { sidebarItems } from "@/components/layout/sidebar-items";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +16,7 @@ export function Sidebar({ user }: { user: { name?: string | null; roles: string[
     { id: "admin", label: "Administracao" }
   ];
   const pathname = usePathname();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const displayName = user.name ?? "Usuario";
   const initials = displayName
     .split(" ")
@@ -28,15 +25,21 @@ export function Sidebar({ user }: { user: { name?: string | null; roles: string[
     .map((part) => part[0]?.toUpperCase())
     .join("") || "U";
 
-  useEffect(() => {
-    if (!expanded) return;
-    const timer = window.setTimeout(() => setExpanded(false), 20000);
-    return () => window.clearTimeout(timer);
-  }, [expanded, pathname]);
+  function handleBlur(event: FocusEvent<HTMLElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      setExpanded(false);
+    }
+  }
 
   return (
-    <aside className={cn("hidden h-screen shrink-0 border-r border-slate-700 bg-slate-900 text-slate-100 shadow-[18px_0_48px_-44px_rgba(15,23,42,0.92)] transition-[width] duration-300 lg:sticky lg:top-0 lg:block", expanded ? "w-72" : "w-[78px]")}>
-      <div className={cn("flex h-20 items-center border-b border-slate-700 px-3", expanded ? "justify-between" : "justify-center")}>
+    <aside
+      className={cn("hidden h-screen shrink-0 border-r border-slate-700 bg-slate-900 text-slate-100 shadow-[18px_0_48px_-44px_rgba(15,23,42,0.92)] transition-[width] duration-300 lg:sticky lg:top-0 lg:block", expanded ? "w-72" : "w-[78px]")}
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      onFocus={() => setExpanded(true)}
+      onBlur={handleBlur}
+    >
+      <div className={cn("flex min-h-16 items-center border-b border-slate-700 px-3", expanded ? "justify-between" : "justify-center")}>
         <div className={cn("flex min-w-0 items-center gap-3", !expanded && "hidden")}>
           <div className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-md">{initials}</div>
           <div>
@@ -47,17 +50,9 @@ export function Sidebar({ user }: { user: { name?: string | null; roles: string[
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          className="grid h-10 w-10 place-items-center rounded-md border border-slate-700 bg-slate-800 text-slate-300 shadow-sm transition-colors hover:bg-slate-700 hover:text-slate-100"
-          aria-label={expanded ? "Fechar menu lateral" : "Abrir menu lateral"}
-          title={expanded ? "Fechar menu" : "Abrir menu"}
-        >
-          {expanded ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-        </button>
+        {!expanded ? <div className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-md">{initials}</div> : null}
       </div>
-      <nav className="max-h-[calc(100vh-5rem)] space-y-3 overflow-y-auto p-3">
+      <nav className="max-h-[calc(100vh-4rem)] space-y-3 overflow-y-auto p-3">
         {sections.map((section) => (
           <div key={section.id} className="space-y-1.5">
             {expanded ? <div className="px-2 text-[11px] font-semibold uppercase text-slate-400">{section.label}</div> : null}
