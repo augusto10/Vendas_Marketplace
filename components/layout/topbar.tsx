@@ -23,17 +23,17 @@ export function Topbar({ name, image, roles }: { name?: string | null; image?: s
   }, []);
 
   return (
-    <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-border bg-background/88 px-4 shadow-[0_14px_34px_-30px_rgba(0,0,0,0.82)] backdrop-blur md:px-8">
+    <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-border/70 bg-card/85 px-4 shadow-[0_14px_34px_-30px_rgba(0,0,0,0.82)] backdrop-blur-xl md:px-8">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <MobileMenu />
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase text-primary">{greeting}</div>
-          <div className="font-title truncate text-lg font-semibold tracking-tight text-foreground">{displayName}</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">{greeting}</div>
+          <div className="font-title truncate text-lg font-semibold tracking-tight text-foreground md:text-xl">{displayName}</div>
         </div>
       </div>
       <div className="flex items-center gap-2 md:gap-3">
         <div className="hidden text-right sm:block">
-          <div className="mt-1 flex flex-wrap justify-end gap-1">
+          <div className="mt-1 flex flex-wrap justify-end gap-1.5">
             {visibleRoles.map((role) => (
               <Badge key={role} className="border-primary/20 bg-primary/10 text-primary">
                 {role}
@@ -43,9 +43,9 @@ export function Topbar({ name, image, roles }: { name?: string | null; image?: s
         </div>
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={image} alt="" className="h-10 w-10 rounded-md object-cover shadow-[0_12px_22px_-16px_rgba(0,0,0,0.85)] ring-1 ring-border" />
+          <img src={image} alt="" className="h-10 w-10 rounded-xl object-cover shadow-[0_12px_22px_-16px_rgba(0,0,0,0.85)] ring-1 ring-border" />
         ) : (
-          <div className="grid h-10 w-10 place-items-center rounded-md bg-accent text-sm font-semibold text-accent-foreground shadow-[0_12px_22px_-16px_rgba(18,32,48,0.85)]">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-sm font-semibold text-accent-foreground shadow-[0_12px_22px_-16px_rgba(18,32,48,0.85)]">
             {initials}
           </div>
         )}

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PeriodFilter } from "@/components/period-filter";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parsePeriod } from "@/lib/period";
 import { getReportData, getReportViewOptions, type ReportView } from "@/lib/services/report-export-service";
 
@@ -27,6 +27,7 @@ export default async function ReportPreviewPage({
   const activeView = viewOptions.find((option) => option.value === selectedView) ?? viewOptions[0];
   const query = `type=${report.type}&start=${period.query.start}&end=${period.query.end}&view=${selectedView}`;
   const previewRows = report.rows.slice(0, 120);
+  const columnTotals = getColumnTotals(report.rows);
   const presetLinks = buildPresetLinks(report.type, selectedView);
 
   return (
@@ -134,6 +135,17 @@ export default async function ReportPreviewPage({
                 </TableRow>
               ))}
             </TableBody>
+            {columnTotals.some((total) => total !== null) ? (
+              <TableFooter>
+                <TableRow>
+                  {report.header.map((column, columnIndex) => (
+                    <TableCell key={`${column}-total`} className="sticky bottom-0 bg-muted font-semibold">
+                      {columnIndex === 0 ? "Total" : formatTotal(columnTotals[columnIndex])}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableFooter>
+            ) : null}
           </Table>
         </CardContent>
       </Card>
@@ -145,6 +157,32 @@ function formatCell(value: unknown) {
   if (value === null || value === undefined || value === "") return "-";
   if (value instanceof Date) return value.toLocaleDateString("pt-BR");
   return String(value);
+}
+
+function getColumnTotals(rows: Array<Array<unknown>>): Array<number | null> {
+  if (!rows.length) return [];
+  return Array.from({ length: rows[0].length }, (_, columnIndex) => {
+    const values = rows.map((row) => row[columnIndex]).filter((value) => value !== null && value !== undefined && value !== "");
+    if (!values.length || !values.every(isNumericValue)) return null;
+    return values.reduce<number>((sum, value) => sum + numericValue(value), 0);
+  });
+}
+
+function isNumericValue(value: unknown): value is number | { toNumber: () => number } {
+  return typeof value === "number" || (typeof value === "object" && value !== null && !(value instanceof Date) && "toNumber" in value);
+}
+
+function numericValue(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "object" && value !== null && "toNumber" in value) {
+    const decimalValue = value as { toNumber?: () => number };
+    if (typeof decimalValue.toNumber === "function") return decimalValue.toNumber();
+  }
+  return 0;
+}
+
+function formatTotal(value: number | null) {
+  return value === null ? "" : value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 }
 
 function normalizeReportView(value: string | undefined): ReportView {

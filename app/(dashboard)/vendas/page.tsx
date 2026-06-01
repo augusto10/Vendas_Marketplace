@@ -5,10 +5,10 @@ import { PeriodFilter } from "@/components/period-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getSalesConciliationReport, type SalesConciliationDateMode } from "@/lib/services/report-service";
 import { parsePeriod } from "@/lib/period";
-import { cn, currency } from "@/lib/utils";
+import { cn, currency, moneyToneClass, signedCurrency } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -123,7 +123,7 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
@@ -158,10 +158,10 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
                   <TableCell>{currency(row.fiscalProductTotal)}</TableCell>
                   <TableCell>{currency(row.shopeeGross)}</TableCell>
                   <TableCell>{currency(row.releasedAmount)}</TableCell>
-                  <TableCell>{currency(row.commission)}</TableCell>
-                  <TableCell>{currency(row.serviceFee)}</TableCell>
-                  <TableCell>{currency(row.transactionFee)}</TableCell>
-                  <TableCell>{currency(row.affiliateCommissionFee)}</TableCell>
+                  <SignedMoneyCell value={row.commission} />
+                  <SignedMoneyCell value={row.serviceFee} />
+                  <SignedMoneyCell value={row.transactionFee} />
+                  <SignedMoneyCell value={row.affiliateCommissionFee} />
                   <TableCell>{currency(row.difal)}</TableCell>
                   <TableCell>
                     <Badge
@@ -176,6 +176,22 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
                 </TableRow>
               ))}
             </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={5} className="sticky bottom-0 bg-muted font-semibold">Total do periodo</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.fiscalTotal)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.fiscalFreight)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.fiscalProductTotal)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.shopeeGross)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.reconciledReleasedAmount)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.commission)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.serviceFee)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.transactionFee)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.affiliateCommissionFee)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(summary.difal)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted" />
+              </TableRow>
+            </TableFooter>
           </Table>
         </CardContent>
       </Card>
@@ -210,4 +226,8 @@ function SummaryCard({
       </CardContent>
     </Card>
   );
+}
+
+function SignedMoneyCell({ value }: { value: number | string | null | undefined }) {
+  return <TableCell className={cn("font-medium", moneyToneClass(value))}>{signedCurrency(value)}</TableCell>;
 }

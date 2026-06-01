@@ -3,7 +3,7 @@ import { PeriodFilter } from "@/components/period-filter";
 import { TopProductsSalesChart } from "@/components/charts/top-products-sales-chart";
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parsePeriod } from "@/lib/period";
 import { getProductsReport } from "@/lib/services/report-service";
 import { currency } from "@/lib/utils";
@@ -14,6 +14,15 @@ export default async function ProdutosPage({ searchParams }: { searchParams: Pro
   const period = parsePeriod(await searchParams);
   const products = await getProductsReport(period);
   const topSalesProducts = [...products].sort((left, right) => right.rows - left.rows).slice(0, 5);
+  const totals = products.reduce(
+    (sum, row) => ({
+      rows: sum.rows + row.rows,
+      revenue: sum.revenue + row.revenue,
+      commission: sum.commission + row.commission,
+      refunds: sum.refunds + row.refunds
+    }),
+    { rows: 0, revenue: 0, commission: 0, refunds: 0 }
+  );
 
   return (
     <div className="space-y-6">
@@ -50,6 +59,15 @@ export default async function ProdutosPage({ searchParams }: { searchParams: Pro
                 </TableRow>
               ))}
             </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={4} className="sticky bottom-0 bg-muted font-semibold">Total</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{totals.rows.toLocaleString("pt-BR")}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(totals.revenue)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(totals.commission)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(totals.refunds)}</TableCell>
+              </TableRow>
+            </TableFooter>
           </Table>
         </CardContent>
       </Card>

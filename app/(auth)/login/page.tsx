@@ -17,14 +17,22 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         className="pointer-events-none absolute inset-0 z-0 bg-cover bg-center"
         style={{ backgroundImage: `url(${loginBgUrl}), url('/images/login-marketplace-bg.jpg')` }}
       />
-      <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(8,13,21,0.76),rgba(8,13,21,0.52))]" />
-      <div className="relative z-20 flex w-full max-w-[440px] flex-col items-center gap-6 text-center">
-        <div className="text-white">
-          <h1 className="font-title text-3xl font-semibold tracking-tight md:text-4xl">Gestao de vendas Marketplace</h1>
+      <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(10,14,22,0.82),rgba(10,14,22,0.58))]" />
+      <div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_top,_rgba(255,174,47,0.15),_transparent_35%)]" />
+      <div className="relative z-20 flex w-full max-w-[480px] flex-col items-center gap-6 text-center">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/90 backdrop-blur">
+          <span className="h-2 w-2 rounded-full bg-primary" />
+          Marketplace Vendas
         </div>
-        <Card className="w-full border-white/20 bg-background/95 text-left shadow-2xl backdrop-blur-xl">
+        <div className="space-y-3 text-white">
+          <h1 className="font-title text-3xl font-semibold tracking-tight md:text-5xl">Gestao de vendas Marketplace</h1>
+          <p className="mx-auto max-w-lg text-sm leading-6 text-white/75 md:text-base">
+            Acesso centralizado para operar com mais clareza, velocidade e controle.
+          </p>
+        </div>
+        <Card className="w-full border-white/15 bg-card/95 text-left shadow-[0_28px_70px_-38px_rgba(0,0,0,0.9)] backdrop-blur-xl">
           <CardHeader className="pb-4">
-            <div className="mb-2 grid h-11 w-11 place-items-center rounded-lg border border-primary/15 bg-primary/10 text-primary">
+            <div className="mb-2 grid h-12 w-12 place-items-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
               <LockKeyhole className="h-5 w-5" />
             </div>
             <CardTitle className="text-2xl">Acessar painel</CardTitle>

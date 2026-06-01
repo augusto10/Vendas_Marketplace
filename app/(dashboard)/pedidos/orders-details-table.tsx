@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { currency } from "@/lib/utils";
+import { cn, currency, moneyToneClass, signedCurrency } from "@/lib/utils";
 
 export type OrderDetails = {
   id: string;
@@ -84,7 +84,10 @@ export function OrdersDetailsTable({ orders }: { orders: OrderDetails[] }) {
                       {order.adjustments.length.toLocaleString("pt-BR")} alerta(s)
                     </Badge>
                     <div className="max-w-[260px] truncate text-xs text-amber-300">
-                      {currency(order.adjustments.reduce((sum, adjustment) => sum + adjustment.amount, 0))} · {order.adjustments[0]?.reason || order.adjustments[0]?.description}
+                      <span className={moneyToneClass(getNetAdjustment(order.adjustments))}>
+                        {signedCurrency(getNetAdjustment(order.adjustments))}
+                      </span>{" "}
+                      - {order.adjustments[0]?.reason || order.adjustments[0]?.description}
                     </div>
                   </div>
                 ) : "-"}
@@ -110,6 +113,12 @@ export function OrdersDetailsTable({ orders }: { orders: OrderDetails[] }) {
 }
 
 function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => void }) {
+  const discountAdjustments = order.adjustments.filter(isDiscountAdjustment);
+  const adjustmentNet = getNetAdjustment(discountAdjustments);
+  const adjustmentDiscount = discountAdjustments.reduce((sum, adjustment) => adjustment.amount < 0 ? sum + Math.abs(adjustment.amount) : sum, 0);
+  const adjustmentAddition = discountAdjustments.reduce((sum, adjustment) => adjustment.amount > 0 ? sum + adjustment.amount : sum, 0);
+  const remainingAfterAdjustments = order.received + adjustmentNet;
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
       <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-lg border bg-background shadow-lg">
@@ -147,6 +156,10 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
             rows={[
               ["Venda Shopee", currency(order.shopeeGross)],
               ["Recebido pago", currency(order.received)],
+              ["Descontado em ajustes", <MoneyValue key="discount" value={-adjustmentDiscount} emptyWhenZero />],
+              ["Acrescentado em ajustes", <MoneyValue key="addition" value={adjustmentAddition} emptyWhenZero />],
+              ["Resultado dos ajustes", <MoneyValue key="net" value={adjustmentNet} />],
+              ["Restou apos ajustes", <span key="remaining" className="font-semibold">{currency(remainingAfterAdjustments)}</span>],
               ["Nota ERP", currency(order.invoiceTotal)],
               ["Frete nota", currency(order.invoiceFreight)]
             ]}
@@ -177,7 +190,7 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
           {order.adjustments.length ? (
             <div className="rounded-lg border border-amber-200">
               <div className="border-b p-3 font-medium text-amber-800">Ajustes do pedido</div>
-              <div className="overflow-x-auto">
+              <div>
                 <Table className="min-w-[760px]">
                   <TableHeader>
                     <TableRow>
@@ -193,7 +206,9 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
                         <TableCell>{formatDate(adjustment.occurredAt)}</TableCell>
                         <TableCell className="align-top whitespace-normal">{adjustment.description}</TableCell>
                         <TableCell className="align-top whitespace-normal">{adjustment.reason}</TableCell>
-                        <TableCell className="text-right align-top font-medium whitespace-nowrap">{currency(adjustment.amount)}</TableCell>
+                        <TableCell className={cn("text-right align-top font-medium whitespace-nowrap", moneyToneClass(adjustment.amount))}>
+                          {signedCurrency(adjustment.amount)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -203,7 +218,7 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
           ) : null}
           <div className="rounded-lg border">
             <div className="border-b p-3 font-medium">Notas fiscais</div>
-            <div className="overflow-x-auto">
+            <div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -240,7 +255,7 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
                 <Badge className="bg-amber-500/15 text-amber-300 hover:bg-amber-500/20">Pedido com ajuste</Badge>
               ) : null}
             </div>
-            <div className="overflow-x-auto">
+            <div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -275,7 +290,7 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
   );
 }
 
-function InfoGroup({ title, rows }: { title: string; rows: Array<[string, string]> }) {
+function InfoGroup({ title, rows }: { title: string; rows: Array<[string, ReactNode]> }) {
   return (
     <div className="rounded-lg border p-3">
       <div className="mb-3 font-medium">{title}</div>
@@ -291,7 +306,36 @@ function InfoGroup({ title, rows }: { title: string; rows: Array<[string, string
   );
 }
 
+function MoneyValue({ value, emptyWhenZero = false }: { value: number; emptyWhenZero?: boolean }) {
+  if (emptyWhenZero && value === 0) return <span className="text-muted-foreground">-</span>;
+  return <span className={cn("font-semibold", moneyToneClass(value))}>{signedCurrency(value)}</span>;
+}
+
+function getNetAdjustment(adjustments: OrderDetails["adjustments"]) {
+  return adjustments.reduce((sum, adjustment) => sum + adjustment.amount, 0);
+}
+
 function formatDate(value: string | null) {
   if (!value) return "-";
   return new Date(value).toLocaleDateString("pt-BR");
+}
+
+function isDiscountAdjustment(adjustment: OrderDetails["adjustments"][number]) {
+  const text = normalizeText(`${adjustment.description} ${adjustment.reason}`);
+  if (text.includes("acelera") || text.includes("antecip")) return false;
+
+  return (
+    text.includes("ajuste") ||
+    text.includes("apos pagamento") ||
+    text.includes("devolu") ||
+    text.includes("reembolso") ||
+    text.includes("return/refund")
+  );
+}
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }

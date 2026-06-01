@@ -438,9 +438,9 @@ export async function getProductsReport(period: Period) {
 }
 
 export async function getFeesReport(period: Period) {
-  const [detected, income] = await Promise.all([
+  const [detected, incomeRows, serviceFeeDetails] = await Promise.all([
     prisma.detectedFee.findMany({ orderBy: [{ status: "asc" }, { lastSeenAt: "desc" }] }),
-    prisma.shopeeIncome.aggregate({
+    prisma.shopeeIncome.findMany({
       where: {
         sku: { not: "-" },
         OR: [
@@ -448,7 +448,7 @@ export async function getFeesReport(period: Period) {
           { paymentCompletedAt: { gte: period.start, lte: period.end } }
         ]
       },
-      _sum: {
+      select: {
         commissionFee: true,
         serviceFee: true,
         transactionFee: true,
@@ -456,19 +456,49 @@ export async function getFeesReport(period: Period) {
         reverseShippingFee: true,
         sellerReturnFee: true
       }
+    }),
+    prisma.serviceFeeDetail.groupBy({
+      by: ["feeName"],
+      where: {
+        occurredAt: { gte: period.start, lte: period.end },
+        amount: { not: 0 }
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+      orderBy: { feeName: "asc" }
     })
   ]);
+  const incomeTotals = [
+    feeTotal("Comissao", "Income", incomeRows.map((row) => Number(row.commissionFee ?? 0))),
+    feeTotal("Servico", "Income", incomeRows.map((row) => Number(row.serviceFee ?? 0))),
+    feeTotal("Transacao", "Income", incomeRows.map((row) => Number(row.transactionFee ?? 0))),
+    feeTotal("Afiliados", "Income", incomeRows.map((row) => Number(row.affiliateCommissionFee ?? 0))),
+    feeTotal("Envio reverso", "Income", incomeRows.map((row) => Number(row.reverseShippingFee ?? 0))),
+    feeTotal("Devolucao vendedor", "Income", incomeRows.map((row) => Number(row.sellerReturnFee ?? 0)))
+  ];
+  const detailTotals = serviceFeeDetails.map((row) => ({
+    name: row.feeName,
+    source: "Detalhe de taxas",
+    amount: Number(row._sum.amount ?? 0),
+    count: row._count._all
+  }));
+  const totals = [...incomeTotals, ...detailTotals]
+    .filter((row) => row.count > 0 || row.amount !== 0)
+    .sort((left, right) => Math.abs(right.amount) - Math.abs(left.amount));
 
   return {
     detected,
-    totals: [
-      { name: "Comissao", amount: Number(income._sum.commissionFee ?? 0) },
-      { name: "Servico", amount: Number(income._sum.serviceFee ?? 0) },
-      { name: "Transacao", amount: Number(income._sum.transactionFee ?? 0) },
-      { name: "Afiliados", amount: Number(income._sum.affiliateCommissionFee ?? 0) },
-      { name: "Envio reverso", amount: Number(income._sum.reverseShippingFee ?? 0) },
-      { name: "Devolucao vendedor", amount: Number(income._sum.sellerReturnFee ?? 0) }
-    ]
+    totals
+  };
+}
+
+function feeTotal(name: string, source: string, values: number[]) {
+  const nonZeroValues = values.filter((value) => value !== 0);
+  return {
+    name,
+    source,
+    amount: nonZeroValues.reduce((sum, value) => sum + value, 0),
+    count: nonZeroValues.length
   };
 }
 

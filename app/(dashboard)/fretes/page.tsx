@@ -1,10 +1,10 @@
 import { PageHeader } from "@/components/page-header";
 import { PeriodFilter } from "@/components/period-filter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle, MetricCard, MetricCardContent, MetricCardHeader } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parsePeriod } from "@/lib/period";
 import { prisma } from "@/lib/prisma";
-import { currency } from "@/lib/utils";
+import { cn, currency, moneyToneClass, signedCurrency } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -31,10 +31,10 @@ export default async function FretesPage({ searchParams }: { searchParams: Promi
       <PageHeader title="Fretes e logistica" description="Frete pago pela Shopee, frete pago pelo comprador, frete logistico, envio reverso e transportadoras." />
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-4">
-        <Card><CardHeader><CardTitle>Frete pago pela Shopee</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(shopeePaidFreight)}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Frete pago pelo comprador</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(buyerPaidFreight)}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Frete logistico</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(logisticsFreight)}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Envio reverso</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{currency(reverse)}</CardContent></Card>
+        <MetricCard><MetricCardHeader><CardTitle>Frete pago pela Shopee</CardTitle></MetricCardHeader><MetricCardContent>{currency(shopeePaidFreight)}</MetricCardContent></MetricCard>
+        <MetricCard><MetricCardHeader><CardTitle>Frete pago pelo comprador</CardTitle></MetricCardHeader><MetricCardContent>{currency(buyerPaidFreight)}</MetricCardContent></MetricCard>
+        <MetricCard><MetricCardHeader><CardTitle>Frete logistico</CardTitle></MetricCardHeader><MetricCardContent>{currency(logisticsFreight)}</MetricCardContent></MetricCard>
+        <MetricCard><MetricCardHeader><CardTitle>Envio reverso</CardTitle></MetricCardHeader><MetricCardContent>{currency(reverse)}</MetricCardContent></MetricCard>
       </div>
       <Card>
         <CardHeader><CardTitle>Total de fretes por transportadora</CardTitle></CardHeader>
@@ -56,6 +56,15 @@ export default async function FretesPage({ searchParams }: { searchParams: Promi
                 </TableRow>
               ))}
             </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">Total</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">
+                  {new Set(incomes.map((row) => row.orderMarketplaceId)).size.toLocaleString("pt-BR")}
+                </TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(logisticsFreight)}</TableCell>
+              </TableRow>
+            </TableFooter>
           </Table>
         </CardContent>
       </Card>
@@ -72,16 +81,29 @@ export default async function FretesPage({ searchParams }: { searchParams: Promi
                   <TableCell>{row.orderMarketplaceId}</TableCell>
                   <TableCell>{row.sku}</TableCell>
                   <TableCell>{row.carrier}</TableCell>
-                  <TableCell>{currency(row.shopeeShippingDiscount?.toString())}</TableCell>
-                  <TableCell>{currency(row.buyerShippingFee?.toString())}</TableCell>
-                  <TableCell>{currency(row.logisticsFreight?.toString())}</TableCell>
-                  <TableCell>{currency(row.reverseShippingFee?.toString())}</TableCell>
+                  <SignedMoneyCell value={row.shopeeShippingDiscount?.toString()} />
+                  <SignedMoneyCell value={row.buyerShippingFee?.toString()} />
+                  <SignedMoneyCell value={row.logisticsFreight?.toString()} />
+                  <SignedMoneyCell value={row.reverseShippingFee?.toString()} />
                 </TableRow>
               ))}
             </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={5} className="sticky bottom-0 bg-muted font-semibold">Total</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(shopeePaidFreight)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(buyerPaidFreight)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(logisticsFreight)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted font-semibold">{currency(reverse)}</TableCell>
+              </TableRow>
+            </TableFooter>
           </Table>
         </CardContent>
       </Card>
     </div>
   );
+}
+
+function SignedMoneyCell({ value }: { value: number | string | null | undefined }) {
+  return <TableCell className={cn("font-medium", moneyToneClass(value))}>{signedCurrency(value)}</TableCell>;
 }

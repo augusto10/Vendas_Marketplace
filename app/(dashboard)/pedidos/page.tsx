@@ -9,11 +9,14 @@ import { OrdersDetailsTable, type OrderDetails } from "./orders-details-table";
 
 export const dynamic = "force-dynamic";
 
-export default async function PedidosPage({ searchParams }: { searchParams: Promise<{ start?: string; end?: string; pedido?: string }> }) {
+type OrderStatusFilter = "all" | "adjustments" | "paid" | "unpaid";
+
+export default async function PedidosPage({ searchParams }: { searchParams: Promise<{ start?: string; end?: string; pedido?: string; status?: string }> }) {
   const params = await searchParams;
   const hasFilteredPeriod = Boolean(params.start || params.end);
   const period = parsePeriod(params);
   const pedido = params.pedido?.trim() ?? "";
+  const status = normalizeStatusFilter(params.status);
   const [periodAdjustments, periodWalletAdjustments] = hasFilteredPeriod ? await Promise.all([
     prisma.adjustment.findMany({
       where: { occurredAt: { gte: period.start, lte: period.end } },
@@ -49,8 +52,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
         pedido ? { marketplaceId: { contains: pedido, mode: "insensitive" } } : {}
       ]
     },
-    orderBy: { createdAtOrder: "desc" },
-    take: 1000,
+    orderBy: [{ createdAtOrder: "asc" }, { paidAt: "asc" }],
     include: { items: true, invoices: true, incomes: true }
   }) : [];
   const orderIds = orders.map((order) => order.marketplaceId);
@@ -105,7 +107,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
       reason: adjustment.transactionType || "-",
       amount: Number(adjustment.amount ?? adjustment.adjustmentValue ?? 0)
     }))
-  ]);
+  ].filter(isRelevantAdjustmentAlert));
   const adjustmentsByOrder = new Map<string, typeof allAdjustments>();
   for (const adjustment of allAdjustments) {
     const key = adjustment.orderMarketplaceId ?? "";
@@ -114,8 +116,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
     current.push(adjustment);
     adjustmentsByOrder.set(key, current);
   }
-  const ordersWithAdjustments = adjustmentsByOrder.size;
-  const details: OrderDetails[] = orders.map((order) => {
+  const rawDetails: OrderDetails[] = orders.map((order) => {
     const productRows = order.incomes.filter((income) => income.sku && income.sku !== "-");
     const incomeRows = productRows.length ? productRows : order.incomes;
     const products = incomeRows
@@ -175,18 +176,28 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
       })),
       products
     };
-  }).sort((left, right) => {
-    if (left.adjustments.length !== right.adjustments.length) return right.adjustments.length - left.adjustments.length;
-    return new Date(right.createdAtOrder ?? right.paidAt ?? 0).getTime() - new Date(left.createdAtOrder ?? left.paidAt ?? 0).getTime();
-  });
+  }).sort((left, right) => getOrderTime(left) - getOrderTime(right));
+  const details = rawDetails.filter((order) => matchesStatusFilter(order, status));
+  const ordersWithAdjustments = details.filter((order) => order.adjustments.length > 0).length;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Pedidos importados" description="Consulta operacional de pedidos, conciliacao fiscal e financeira, notas e ajustes vinculados." />
       <PeriodFilter period={period}>
-        <div className="space-y-1.5">
-          <Label htmlFor="pedido">Pedido</Label>
-          <Input id="pedido" name="pedido" defaultValue={pedido} placeholder="Numero do pedido" />
+        <div className="grid gap-3 sm:grid-cols-[190px_170px]">
+          <div className="space-y-1.5">
+            <Label htmlFor="pedido">Pedido</Label>
+            <Input id="pedido" name="pedido" defaultValue={pedido} placeholder="Numero do pedido" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="status">Filtro de pedidos</Label>
+            <select id="status" name="status" defaultValue={status} className="form-select">
+              <option value="all">Todos</option>
+              <option value="adjustments">Pedidos com ajustes</option>
+              <option value="paid">Pagos</option>
+              <option value="unpaid">Nao pagos</option>
+            </select>
+          </div>
         </div>
       </PeriodFilter>
       {hasFilteredPeriod ? (
@@ -194,7 +205,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
           <CardHeader>
             <CardTitle>Pedidos importados</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {ordersWithAdjustments.toLocaleString("pt-BR")} pedidos com ajustes no periodo filtrado.
+              {details.length.toLocaleString("pt-BR")} pedidos no periodo filtrado. {ordersWithAdjustments.toLocaleString("pt-BR")} com ajustes.
             </p>
           </CardHeader>
           <CardContent>
@@ -231,15 +242,57 @@ function mergeAdjustments(adjustments: AdjustmentAlert[]) {
     .sort((left, right) => (right.occurredAt?.getTime() ?? 0) - (left.occurredAt?.getTime() ?? 0));
 }
 
+function getOrderTime(order: Pick<OrderDetails, "createdAtOrder" | "paidAt">) {
+  const time = new Date(order.createdAtOrder ?? order.paidAt ?? "").getTime();
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+}
+
+function normalizeStatusFilter(value: string | undefined): OrderStatusFilter {
+  return value === "adjustments" || value === "paid" || value === "unpaid" ? value : "all";
+}
+
+function matchesStatusFilter(order: OrderDetails, status: OrderStatusFilter) {
+  if (status === "adjustments") return order.adjustments.length > 0;
+  if (status === "paid") return order.status === "Pago";
+  if (status === "unpaid") return order.status === "Pendente";
+  return true;
+}
+
+function isRelevantAdjustmentAlert(adjustment: AdjustmentAlert) {
+  const text = normalizeAdjustmentText(`${adjustment.description} ${adjustment.reason}`);
+  if (text.includes("acelera") || text.includes("antecip")) return false;
+
+  return (
+    text.includes("ajuste") ||
+    text.includes("apos pagamento") ||
+    text.includes("devolu") ||
+    text.includes("reembolso") ||
+    text.includes("return/refund") ||
+    text.includes("refund") ||
+    text.includes("chargeback") ||
+    text.includes("estorno") ||
+    text.includes("outros")
+  );
+}
+
 function adjustmentKey(adjustment: AdjustmentAlert) {
-  const sourceId = adjustment.id.replace(/^(adjustment|wallet)-/, "");
   const order = normalizeAdjustmentText(adjustment.orderMarketplaceId || "sem-pedido");
   const date = adjustment.occurredAt?.toISOString().slice(0, 10) ?? "sem-data";
   const amount = adjustment.amount.toFixed(2);
-  const description = normalizeAdjustmentText(adjustment.description);
-  const reason = normalizeAdjustmentText(adjustment.reason);
+  const category = adjustmentCategory(adjustment);
 
-  return `${order}|${date}|${amount}|${description || reason || sourceId}`;
+  return `${order}|${date}|${amount}|${category}`;
+}
+
+function adjustmentCategory(adjustment: AdjustmentAlert) {
+  const text = normalizeAdjustmentText(`${adjustment.description} ${adjustment.reason}`);
+  if (text.includes("return/refund") || text.includes("refund") || text.includes("reembolso") || text.includes("devolu")) return "devolucao-reembolso";
+  if (text.includes("icms") || text.includes("difal")) return "difal";
+  if (text.includes("chargeback") || text.includes("estorno")) return "estorno";
+  if (text.includes("outros")) return "outros";
+  if (text.includes("apos pagamento")) return "ajuste-apos-pagamento";
+  if (text.includes("ajuste")) return "ajuste";
+  return text || "ajuste";
 }
 
 function normalizeAdjustmentText(value: string) {

@@ -2,11 +2,11 @@ import { Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PeriodFilter } from "@/components/period-filter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle, MetricCard, MetricCardContent, MetricCardHeader } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parsePeriod } from "@/lib/period";
 import { getFinancialReport } from "@/lib/services/report-service";
-import { cn, currency } from "@/lib/utils";
+import { cn, currency, moneyToneClass, signedCurrency } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,7 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
   const walletIn = data.wallet.filter((row) => row.direction === "IN").reduce((sum, row) => sum + Number(row.amount), 0);
   const walletOut = data.wallet.filter((row) => row.direction === "OUT").reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   const acceleraReceived = data.accelera.reduce((sum, row) => sum + Number(row.receivedAmount ?? 0), 0);
+  const walletBalance = walletIn - walletOut;
 
   return (
     <div className="space-y-6">
@@ -24,9 +25,9 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
       </PageHeader>
       <PeriodFilter period={period} />
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-emerald-500/25 bg-emerald-950/20"><CardHeader><CardTitle className="text-emerald-300">Entradas carteira</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-emerald-200">{currency(walletIn)}</CardContent></Card>
-        <Card className="border-red-500/25 bg-red-950/20"><CardHeader><CardTitle className="text-red-300">Saidas carteira</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-red-200">{currency(walletOut)}</CardContent></Card>
-        <Card className="border-emerald-500/25 bg-emerald-950/20"><CardHeader><CardTitle className="text-emerald-300">Acelera recebido</CardTitle></CardHeader><CardContent className="text-2xl font-semibold text-emerald-200">{currency(acceleraReceived)}</CardContent></Card>
+        <MetricCard className="border-emerald-500/25 bg-emerald-950/20"><MetricCardHeader><CardTitle className="text-emerald-300">Entradas carteira</CardTitle></MetricCardHeader><MetricCardContent className="text-emerald-200">{currency(walletIn)}</MetricCardContent></MetricCard>
+        <MetricCard className="border-red-500/25 bg-red-950/20"><MetricCardHeader><CardTitle className="text-red-300">Saidas carteira</CardTitle></MetricCardHeader><MetricCardContent className="text-red-200">{currency(walletOut)}</MetricCardContent></MetricCard>
+        <MetricCard className="border-emerald-500/25 bg-emerald-950/20"><MetricCardHeader><CardTitle className="text-emerald-300">Acelera recebido</CardTitle></MetricCardHeader><MetricCardContent className="text-emerald-200">{currency(acceleraReceived)}</MetricCardContent></MetricCard>
       </div>
       <Card>
         <CardHeader><CardTitle>Carteira Shopee</CardTitle></CardHeader>
@@ -51,12 +52,19 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
                         {row.direction}
                       </span>
                     </TableCell>
-                    <TableCell className={cn("font-semibold", tone === "in" && "text-emerald-300", tone === "out" && "text-red-300")}>{currency(row.amount.toString())}</TableCell>
+                    <TableCell className={cn("font-semibold", moneyToneClass(row.amount.toString()))}>{signedCurrency(row.amount.toString())}</TableCell>
                     <TableCell>{row.status}</TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={4} className="sticky bottom-0 bg-muted font-semibold">Saldo entradas - saidas</TableCell>
+                <TableCell className={cn("sticky bottom-0 bg-muted font-semibold", moneyToneClass(walletBalance))}>{signedCurrency(walletBalance)}</TableCell>
+                <TableCell className="sticky bottom-0 bg-muted" />
+              </TableRow>
+            </TableFooter>
           </Table>
         </CardContent>
       </Card>
