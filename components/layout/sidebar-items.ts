@@ -29,7 +29,6 @@ export const sidebarItems: Array<{
   { href: "/vendas", label: "Vendas", icon: ReceiptText, permission: "finance.view", section: "operacao" },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList, permission: "finance.view", section: "operacao" },
   { href: "/produtos", label: "Produtos", icon: Boxes, permission: "finance.view", section: "operacao" },
-  { href: "/comissoes", label: "Comissoes", icon: Percent, permission: "fees.view", section: "operacao" },
   { href: "/taxas", label: "Taxas", icon: Percent, permission: "fees.view", section: "operacao" },
   { href: "/devolucoes", label: "Devolucoes", icon: RotateCcw, permission: "finance.view", section: "operacao" },
   { href: "/fretes", label: "Fretes", icon: Truck, permission: "finance.view", section: "operacao" },
