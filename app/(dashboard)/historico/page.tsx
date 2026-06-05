@@ -7,11 +7,12 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function HistoricoPage() {
-  const uploads = await prisma.upload.findMany({
-    orderBy: { createdAt: "desc" },
+  const uploadsRaw = await prisma.upload.findMany({
+    orderBy: [{ processedAt: "desc" }, { createdAt: "desc" }],
     take: 50,
     include: { uploadedBy: { select: { name: true } } }
   });
+  const uploads = uploadsRaw.sort((left, right) => uploadImportedAt(right).getTime() - uploadImportedAt(left).getTime());
 
   return (
     <div className="space-y-6">
@@ -27,7 +28,7 @@ export default async function HistoricoPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Data upload</TableHead>
+                <TableHead>Data importacao</TableHead>
                 <TableHead>Arquivo</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Status</TableHead>
@@ -37,7 +38,7 @@ export default async function HistoricoPage() {
             <TableBody>
               {uploads.map((upload) => (
                 <TableRow key={upload.id}>
-                  <TableCell>{upload.createdAt.toLocaleString("pt-BR")}</TableCell>
+                  <TableCell>{(upload.processedAt ?? upload.createdAt).toLocaleString("pt-BR")}</TableCell>
                   <TableCell>{upload.originalName}</TableCell>
                   <TableCell>{upload.type}</TableCell>
                   <TableCell>
@@ -61,4 +62,8 @@ export default async function HistoricoPage() {
       </Card>
     </div>
   );
+}
+
+function uploadImportedAt(upload: { processedAt: Date | null; createdAt: Date }) {
+  return upload.processedAt ?? upload.createdAt;
 }

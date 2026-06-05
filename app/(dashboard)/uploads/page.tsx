@@ -10,11 +10,12 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function UploadsPage() {
-  const uploads = await prisma.upload.findMany({
-    orderBy: { createdAt: "desc" },
+  const uploadsRaw = await prisma.upload.findMany({
+    orderBy: [{ processedAt: "desc" }, { createdAt: "desc" }],
     take: 50,
     include: { uploadedBy: { select: { name: true } } }
   });
+  const uploads = uploadsRaw.sort((left, right) => uploadImportedAt(right).getTime() - uploadImportedAt(left).getTime());
   const completed = uploads.filter((upload) => upload.status === "COMPLETED").length;
   const processing = uploads.filter((upload) => upload.status === "PROCESSING").length;
   const failed = uploads.filter((upload) => upload.status === "FAILED").length;
@@ -66,7 +67,7 @@ export default async function UploadsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Data</TableHead>
+                  <TableHead>Data importacao</TableHead>
                   <TableHead>Arquivo</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Status</TableHead>
@@ -76,7 +77,7 @@ export default async function UploadsPage() {
               <TableBody>
                 {uploads.map((upload) => (
                   <TableRow key={upload.id}>
-                    <TableCell>{upload.createdAt.toLocaleString("pt-BR")}</TableCell>
+                    <TableCell>{(upload.processedAt ?? upload.createdAt).toLocaleString("pt-BR")}</TableCell>
                     <TableCell className="max-w-[360px] truncate font-medium">{upload.originalName}</TableCell>
                     <TableCell>{upload.type}</TableCell>
                     <TableCell>
@@ -103,4 +104,8 @@ export default async function UploadsPage() {
       </Card>
     </div>
   );
+}
+
+function uploadImportedAt(upload: { processedAt: Date | null; createdAt: Date }) {
+  return upload.processedAt ?? upload.createdAt;
 }

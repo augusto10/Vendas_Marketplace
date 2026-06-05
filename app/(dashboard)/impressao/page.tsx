@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parsePeriod } from "@/lib/period";
@@ -42,6 +42,7 @@ export default async function PrintableReportPage({
   const dateMode = normalizeDateMode(params.dateMode);
   const selectedSections = normalizeSections(params.sections);
   const selectedSet = new Set(selectedSections);
+  const downloadableSection = selectedSections.length === 1 && selectedSections[0] !== "overview" ? selectedSections[0] : null;
   const reports = await Promise.all(
     selectedSections
       .filter((section): section is ReportType => section !== "overview")
@@ -66,6 +67,14 @@ export default async function PrintableReportPage({
               Voltar
             </Link>
           </Button>
+          {downloadableSection ? (
+            <Button asChild variant="outline">
+              <a href={`/api/v1/reports?type=${downloadableSection}&format=xlsx&start=${period.query.start}&end=${period.query.end}`}>
+                <Download className="h-4 w-4" />
+                Baixar
+              </a>
+            </Button>
+          ) : null}
           <PrintButton />
         </div>
       </div>

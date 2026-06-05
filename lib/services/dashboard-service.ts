@@ -85,8 +85,8 @@ export async function getStateRanking(period: Period, dateMode: SalesConciliatio
 }
 
 export async function getRecentUploads() {
-  return prisma.upload.findMany({
-    orderBy: { createdAt: "desc" },
+  const uploads = await prisma.upload.findMany({
+    orderBy: [{ processedAt: "desc" }, { createdAt: "desc" }],
     take: 6,
     select: {
       id: true,
@@ -97,7 +97,13 @@ export async function getRecentUploads() {
       rowsImported: true,
       rowsUpdated: true,
       errorsCount: true,
+      processedAt: true,
       createdAt: true
     }
   });
+  return uploads.sort((left, right) => uploadImportedAt(right).getTime() - uploadImportedAt(left).getTime());
+}
+
+function uploadImportedAt(upload: { processedAt: Date | null; createdAt: Date }) {
+  return upload.processedAt ?? upload.createdAt;
 }

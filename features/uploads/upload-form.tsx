@@ -112,14 +112,14 @@ export function UploadForm() {
                   ? "Processando planilha"
                   : "Carregando arquivo"}
             </span>
-            <span>{progress}%</span>
+            <span>{phase === "processing" && state === "uploading" ? "Enviado" : `${progress}%`}</span>
           </div>
           <div className="relative h-3 overflow-hidden rounded-full bg-muted ring-1 ring-border">
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-300",
                 state === "done" ? "bg-emerald-500" : "bg-primary",
-                state === "uploading" && "animate-pulse"
+                state === "uploading" && phase === "processing" && "animate-pulse"
               )}
               style={{ width: `${progress}%` }}
             />
@@ -129,7 +129,9 @@ export function UploadForm() {
           </div>
           {state === "uploading" ? (
             <div className="text-xs text-muted-foreground">
-              Aguarde, isso pode demorar em planilhas grandes. Se falhar, o sistema vai avisar para refazer o upload.
+              {phase === "processing"
+                ? "Arquivo enviado. Agora a planilha esta sendo validada e importada."
+                : "O percentual acompanha o envio real do arquivo. Planilhas grandes podem levar mais tempo."}
             </div>
           ) : null}
           {state === "done" ? (
@@ -173,8 +175,8 @@ function uploadFile(
 
     request.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
-      const percent = Math.round((event.loaded / event.total) * 95);
-      onProgress(Math.min(percent, 95));
+      const percent = Math.round((event.loaded / event.total) * 100);
+      onProgress(Math.min(percent, 100));
       if (event.loaded === event.total) {
         onPhaseChange("processing");
       }
@@ -182,7 +184,7 @@ function uploadFile(
 
     request.upload.onload = () => {
       onPhaseChange("processing");
-      onProgress(95);
+      onProgress(100);
     };
 
     request.onload = () => {

@@ -43,7 +43,22 @@ export async function importMarketplaceFile(file: File, uploadedById?: string): 
 
   const upload = await prisma.upload.upsert({
     where: { checksum_type: { checksum: fileChecksum, type } },
-    update: { status: "PROCESSING", originalName: file.name, storagePath, uploadedById },
+    update: {
+      status: "PROCESSING",
+      originalName: file.name,
+      storagePath,
+      uploadedById,
+      createdAt: new Date(),
+      processedAt: null,
+      rowsRead: 0,
+      rowsImported: 0,
+      rowsUpdated: 0,
+      errorsCount: 0,
+      detectedFees: 0,
+      periodStart: null,
+      periodEnd: null,
+      summary: {}
+    },
     create: { checksum: fileChecksum, type, originalName: file.name, storagePath, status: "PROCESSING", uploadedById }
   });
   await prisma.importError.deleteMany({ where: { uploadId: upload.id } });

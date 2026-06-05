@@ -148,9 +148,10 @@ async function getRawReportData(typeInput: string | null | undefined, period: Pe
   }
 
   if (report.type === "uploads") {
-    const uploads = await prisma.upload.findMany({ orderBy: { createdAt: "desc" }, take: 1000 });
-    const rows = uploads.map((row) => [row.createdAt.toISOString(), row.originalName, row.type, row.status, row.rowsRead, row.rowsImported, row.rowsUpdated, row.errorsCount]);
-    return withCustomChart(report, ["data", "arquivo", "tipo", "status", "lidas", "importadas", "atualizadas", "erros"], rows, buildDailyChart(rows, 0, 5));
+    const uploadsRaw = await prisma.upload.findMany({ orderBy: [{ processedAt: "desc" }, { createdAt: "desc" }], take: 1000 });
+    const uploads = uploadsRaw.sort((left, right) => uploadImportedAt(right).getTime() - uploadImportedAt(left).getTime());
+    const rows = uploads.map((row) => [(row.processedAt ?? row.createdAt).toISOString(), row.originalName, row.type, row.status, row.rowsRead, row.rowsImported, row.rowsUpdated, row.errorsCount]);
+    return withCustomChart(report, ["data_importacao", "arquivo", "tipo", "status", "lidas", "importadas", "atualizadas", "erros"], rows, buildDailyChart(rows, 0, 5));
   }
 
   if (report.type === "wallet") {
@@ -319,4 +320,8 @@ function normalizeDay(value: unknown) {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString().slice(0, 10);
+}
+
+function uploadImportedAt(upload: { processedAt: Date | null; createdAt: Date }) {
+  return upload.processedAt ?? upload.createdAt;
 }
