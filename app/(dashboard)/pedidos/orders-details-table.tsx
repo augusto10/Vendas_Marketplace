@@ -16,6 +16,8 @@ export type OrderDetails = {
   state: string;
   customerName: string | null;
   status: "Pago" | "Pendente";
+  paymentOpenDays: number | null;
+  paymentOverdue: boolean;
   shopeeGross: number;
   received: number;
   commission: number;
@@ -93,9 +95,17 @@ export function OrdersDetailsTable({ orders }: { orders: OrderDetails[] }) {
                 ) : "-"}
               </TableCell>
               <TableCell>
-                <Badge className={order.status === "Pago" ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20" : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/20"}>
-                  {order.status}
-                </Badge>
+                <div className="space-y-1">
+                  <Badge className={order.status === "Pago" ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20" : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/20"}>
+                    {order.paymentOverdue ? <AlertTriangle className="mr-1 h-3.5 w-3.5" /> : null}
+                    {order.status}
+                  </Badge>
+                  {order.paymentOverdue ? (
+                    <div className="max-w-[180px] whitespace-normal text-xs text-amber-600 dark:text-amber-300">
+                      Em aberto ha {order.paymentOpenDays} dias
+                    </div>
+                  ) : null}
+                </div>
               </TableCell>
               <TableCell className="text-right">
                 <Button type="button" variant="outline" size="sm" onClick={() => setSelected(order)}>
@@ -148,7 +158,7 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
             rows={[
               ["Venda", formatDate(order.createdAtOrder)],
               ["Pagamento", formatDate(order.paidAt)],
-              ["Status", order.status]
+              ["Status", order.paymentOverdue ? `${order.status} ha ${order.paymentOpenDays} dias` : order.status]
             ]}
           />
           <InfoGroup

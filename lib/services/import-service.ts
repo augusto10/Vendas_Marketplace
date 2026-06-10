@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createHash } from "crypto";
-import type { UploadType } from "@prisma/client";
+import { Prisma, type Upload, type UploadType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { detectUploadType } from "@/lib/importers/detector";
 import { parseFile } from "@/lib/importers/parser";
@@ -16,6 +16,14 @@ function periodFromDates(dates: Array<Date | null>) {
 
 function pickRows(sheets: ParsedSheet[]) {
   return sheets.flatMap((sheet) => sheet.rows.map((row) => ({ sheet: sheet.name, row: normalizeRow(row) })));
+}
+
+function chunk<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function uploadDirectory() {
@@ -36,10 +44,16 @@ async function checksum(file: File) {
 }
 
 export async function importMarketplaceFile(file: File, uploadedById?: string): Promise<ImportSummary> {
+  const upload = await prepareMarketplaceUpload(file, uploadedById);
+  return processPreparedUpload(upload.id);
+}
+
+export async function prepareMarketplaceUpload(file: File, uploadedById?: string) {
   const fileChecksum = await checksum(file);
   const sheets = await parseFile(file);
   const type = detectUploadType(sheets);
   const storagePath = await persistFile(file, fileChecksum);
+  const rowsTotal = pickRows(sheets).length;
 
   const upload = await prisma.upload.upsert({
     where: { checksum_type: { checksum: fileChecksum, type } },
@@ -51,18 +65,43 @@ export async function importMarketplaceFile(file: File, uploadedById?: string): 
       createdAt: new Date(),
       processedAt: null,
       rowsRead: 0,
+      rowsTotal,
       rowsImported: 0,
       rowsUpdated: 0,
+      progress: 5,
+      currentStep: "Arquivo recebido. Aguardando processamento.",
       errorsCount: 0,
       detectedFees: 0,
       periodStart: null,
       periodEnd: null,
       summary: {}
     },
-    create: { checksum: fileChecksum, type, originalName: file.name, storagePath, status: "PROCESSING", uploadedById }
+    create: {
+      checksum: fileChecksum,
+      type,
+      originalName: file.name,
+      storagePath,
+      status: "PROCESSING",
+      uploadedById,
+      rowsTotal,
+      progress: 5,
+      currentStep: "Arquivo recebido. Aguardando processamento."
+    }
   });
   await prisma.importError.deleteMany({ where: { uploadId: upload.id } });
+  return upload;
+}
 
+export async function processPreparedUpload(uploadId: string): Promise<ImportSummary> {
+  const upload = await prisma.upload.findUnique({ where: { id: uploadId } });
+  if (!upload?.storagePath) throw new Error("Upload sem arquivo original salvo.");
+
+  const { readFile } = await import("fs/promises");
+  const data = await readFile(upload.storagePath);
+  const file = new File([data], upload.originalName);
+  const sheets = await parseFile(file);
+  const type = detectUploadType(sheets);
+  const rowsTotal = pickRows(sheets).length;
   const summary: ImportSummary = {
     uploadId: upload.id,
     type,
@@ -74,12 +113,19 @@ export async function importMarketplaceFile(file: File, uploadedById?: string): 
   };
 
   try {
+    await updateUploadProgress(upload.id, {
+      progress: 10,
+      rowsTotal,
+      currentStep: "Planilha validada. Iniciando importacao."
+    });
+
     if (type === "FISCAL_INVOICE") await importFiscal(sheets, summary);
     if (type === "SHOPEE_WALLET") await importWallet(sheets, summary);
     if (type === "SHOPEE_ACCELERA") await importAccelera(sheets, summary);
-    if (type === "SHOPEE_INCOME") await importIncome(sheets, summary);
+    if (type === "SHOPEE_INCOME") await importIncome(sheets, summary, upload.id);
     if (type === "UNKNOWN") throw new Error("Tipo de planilha nao reconhecido.");
 
+    await prisma.importError.deleteMany({ where: { uploadId: upload.id } });
     await prisma.importError.createMany({
       data: summary.errors.map((error) => ({
         uploadId: upload.id,
@@ -95,8 +141,11 @@ export async function importMarketplaceFile(file: File, uploadedById?: string): 
       data: {
         status: summary.errors.length ? "FAILED" : "COMPLETED",
         rowsRead: summary.rowsRead,
+        rowsTotal,
         rowsImported: summary.rowsImported,
         rowsUpdated: summary.rowsUpdated,
+        progress: 100,
+        currentStep: summary.errors.length ? "Importacao finalizada com erros." : "Importacao concluida.",
         errorsCount: summary.errors.length,
         detectedFees: summary.detectedFees.length,
         periodStart: summary.periodStart,
@@ -108,7 +157,13 @@ export async function importMarketplaceFile(file: File, uploadedById?: string): 
   } catch (error) {
     await prisma.upload.update({
       where: { id: upload.id },
-      data: { status: "FAILED", errorsCount: summary.errors.length + 1, processedAt: new Date() }
+      data: {
+        status: "FAILED",
+        progress: 100,
+        currentStep: error instanceof Error ? error.message : "Falha ao processar upload.",
+        errorsCount: summary.errors.length + 1,
+        processedAt: new Date()
+      }
     });
     throw error;
   }
@@ -116,13 +171,30 @@ export async function importMarketplaceFile(file: File, uploadedById?: string): 
   return summary;
 }
 
+async function updateUploadProgress(uploadId: string, data: Partial<Pick<Upload, "rowsRead" | "rowsTotal" | "rowsImported" | "rowsUpdated" | "progress" | "currentStep">>) {
+  await prisma.upload.update({ where: { id: uploadId }, data });
+}
+
 export async function reprocessUpload(uploadId: string, actorId?: string) {
   const upload = await prisma.upload.findUnique({ where: { id: uploadId } });
   if (!upload?.storagePath) throw new Error("Upload sem arquivo original salvo.");
-  const { readFile } = await import("fs/promises");
-  const data = await readFile(upload.storagePath);
-  const file = new File([data], upload.originalName);
-  return importMarketplaceFile(file, actorId);
+  await prisma.upload.update({
+    where: { id: upload.id },
+    data: {
+      status: "PROCESSING",
+      uploadedById: actorId,
+      processedAt: null,
+      rowsRead: 0,
+      rowsImported: 0,
+      rowsUpdated: 0,
+      progress: 5,
+      currentStep: "Reprocessamento iniciado.",
+      errorsCount: 0,
+      summary: {}
+    }
+  });
+  await prisma.importError.deleteMany({ where: { uploadId: upload.id } });
+  return processPreparedUpload(upload.id);
 }
 
 async function importFiscal(sheets: ParsedSheet[], summary: ImportSummary) {
@@ -264,7 +336,216 @@ function acceleraMoney(value: unknown): number {
   return parsed;
 }
 
-async function importIncome(sheets: ParsedSheet[], summary: ImportSummary) {
+async function importIncome(sheets: ParsedSheet[], summary: ImportSummary, uploadId?: string) {
+  const rows = pickRows(sheets);
+  const dates: Array<Date | null> = [];
+  const detectedFeeNames = new Set<string>();
+  const adjustments: Prisma.AdjustmentCreateManyInput[] = [];
+  const serviceFees: Prisma.ServiceFeeDetailCreateManyInput[] = [];
+  const ordersByMarketplaceId = new Map<string, Prisma.OrderCreateManyInput>();
+  const incomeRows: Prisma.ShopeeIncomeCreateManyInput[] = [];
+
+  for (const { sheet, row } of rows) {
+    summary.rowsRead++;
+    if (uploadId && summary.rowsRead % 500 === 0) {
+      await updateUploadProgress(uploadId, {
+        rowsRead: summary.rowsRead,
+        rowsTotal: rows.length,
+        progress: Math.min(55, 10 + Math.floor((summary.rowsRead / Math.max(rows.length, 1)) * 45)),
+        currentStep: `Lendo linhas da planilha: ${summary.rowsRead}/${rows.length}.`
+      });
+    }
+
+    if (/adjustment/i.test(sheet)) {
+      const orderMarketplaceId = String(get(row, "Numero do pedido relacionado", "ID do pedido") ?? "").trim();
+      const amount = money(get(row, "Valor do ajuste"));
+      const occurredAt = date(get(row, "Data de conclusao do ajuste"));
+      dates.push(occurredAt);
+      if (!orderMarketplaceId || !amount) continue;
+
+      adjustments.push({
+        rawHash: hashRow({ sheet, row }),
+        orderMarketplaceId,
+        description: String(get(row, "Tipo/Descricao do ajuste") ?? ""),
+        reason: String(get(row, "Motivo do ajuste") ?? ""),
+        amount,
+        occurredAt
+      });
+      continue;
+    }
+
+    if (/service fee/i.test(sheet)) {
+      const feeName = String(get(row, "Nome da taxa", "Tipo de taxa", "Taxa") ?? "Taxa de servico");
+      serviceFees.push({
+        rawHash: hashRow({ sheet, row }),
+        orderMarketplaceId: String(get(row, "ID do pedido") ?? ""),
+        feeName,
+        amount: money(get(row, "Valor", "Taxa de servico")),
+        occurredAt: date(get(row, "Data", "Data de criacao do pedido"))
+      });
+      detectedFeeNames.add(feeName);
+      continue;
+    }
+
+    const orderMarketplaceId = String(get(row, "ID do pedido") ?? "").trim();
+    if (!orderMarketplaceId) continue;
+
+    const orderCreatedAt = date(get(row, "Data de criacao do pedido"));
+    const paidAt = date(get(row, "Data de conclusao do pagamento"));
+    const buyerUsername = String(get(row, "Nome de usuario (Comprador)") ?? "");
+    const grossAmount = money(get(row, "Quantia paga pelo comprador"));
+    const carrier = String(get(row, "Transportadora", "Nome da Transportadora") ?? "");
+    dates.push(orderCreatedAt);
+
+    if (!ordersByMarketplaceId.has(orderMarketplaceId)) {
+      ordersByMarketplaceId.set(orderMarketplaceId, {
+        marketplaceId: orderMarketplaceId,
+        createdAtOrder: orderCreatedAt,
+        paidAt,
+        buyerUsername,
+        grossAmount,
+        carrier
+      });
+    }
+
+    incomeRows.push({
+      rawHash: hashRow({ sheet, row }),
+      orderMarketplaceId,
+      sku: String(get(row, "SKU") ?? ""),
+      productName: String(get(row, "Nome do produto") ?? ""),
+      orderCreatedAt,
+      paymentCompletedAt: paidAt,
+      releasedAmount: money(get(row, "Quantia total lancada")),
+      productPrice: money(get(row, "Preco do produto")),
+      refundAmount: money(get(row, "Valor do Reembolso")),
+      logisticsFreight: money(get(row, "Frete cobrado pelo parceiro logistico")),
+      buyerShippingFee: money(get(row, "Taxa de frete paga pelo comprador")),
+      shopeeShippingDiscount: money(get(row, "Desconto de frete pela Shopee")),
+      reverseShippingFee: money(get(row, "Taxa de envio reverso")),
+      sellerReturnFee: money(get(row, "Taxa de devolucao do vendedor")),
+      commissionFee: money(get(row, "Taxa de comissao")),
+      serviceFee: money(get(row, "Taxa de servico")),
+      transactionFee: money(get(row, "Taxa de transacao")),
+      affiliateCommissionFee: money(get(row, "Taxa de comissao Afiliados do Vendedor")),
+      buyerPaidAmount: grossAmount,
+      carrier,
+      buyerRefundedAmount: money(get(row, "Valor Reembolsado ao Comprador"))
+    });
+
+    for (const fee of ["Taxa de comissao", "Taxa de servico", "Taxa de transacao", "Taxa de comissao Afiliados do Vendedor"]) {
+      detectedFeeNames.add(fee);
+    }
+  }
+
+  const existingAdjustmentHashes = await existingHashes("adjustment", adjustments.map((item) => item.rawHash));
+  if (uploadId) {
+    await updateUploadProgress(uploadId, { rowsRead: summary.rowsRead, progress: 60, currentStep: "Verificando dados ja importados." });
+  }
+  const existingServiceFeeHashes = await existingHashes("serviceFeeDetail", serviceFees.map((item) => item.rawHash));
+  const existingIncomeHashes = await existingHashes("shopeeIncome", incomeRows.map((item) => item.rawHash));
+  const newAdjustments = adjustments.filter((item) => !existingAdjustmentHashes.has(item.rawHash));
+  const newServiceFees = serviceFees.filter((item) => !existingServiceFeeHashes.has(item.rawHash));
+  const newIncomeRows = incomeRows.filter((item) => !existingIncomeHashes.has(item.rawHash));
+
+  await createManyInChunks("adjustment", newAdjustments);
+  if (uploadId) {
+    await updateUploadProgress(uploadId, { progress: 70, currentStep: "Gravando ajustes." });
+  }
+  await createManyInChunks("serviceFeeDetail", newServiceFees);
+  if (uploadId) {
+    await updateUploadProgress(uploadId, { progress: 78, currentStep: "Gravando taxas de servico." });
+  }
+  await createManyInChunks("order", Array.from(ordersByMarketplaceId.values()));
+  if (uploadId) {
+    await updateUploadProgress(uploadId, { progress: 84, currentStep: "Atualizando pedidos." });
+  }
+
+  const marketplaceIds = Array.from(ordersByMarketplaceId.keys());
+  const orderIds = new Map<string, string>();
+  for (const ids of chunk(marketplaceIds, 1000)) {
+    const savedOrders = await prisma.order.findMany({
+      where: { marketplaceId: { in: ids } },
+      select: { id: true, marketplaceId: true }
+    });
+    for (const order of savedOrders) orderIds.set(order.marketplaceId, order.id);
+  }
+
+  await createManyInChunks(
+    "shopeeIncome",
+    newIncomeRows.map((item) => ({ ...item, orderId: orderIds.get(item.orderMarketplaceId) }))
+  );
+  if (uploadId) {
+    await updateUploadProgress(uploadId, { progress: 92, currentStep: "Gravando lancamentos de receita." });
+  }
+
+  for (const ids of chunk(marketplaceIds, 500)) {
+    if (!ids.length) continue;
+    await prisma.$executeRaw`
+      UPDATE sales_invoices AS si
+      SET "orderId" = orders.id
+      FROM orders
+      WHERE si."orderId" IS NULL
+        AND si."customerOrder" = orders."marketplaceId"
+        AND si."customerOrder" IN (${Prisma.join(ids)})
+    `;
+  }
+
+  for (const feeName of detectedFeeNames) await detectFee("SHOPEE_INCOME", feeName, summary);
+
+  summary.rowsImported += newAdjustments.length + newServiceFees.length + newIncomeRows.length;
+  summary.rowsUpdated += adjustments.length - newAdjustments.length;
+  summary.rowsUpdated += serviceFees.length - newServiceFees.length;
+  summary.rowsUpdated += incomeRows.length - newIncomeRows.length;
+  if (uploadId) {
+    await updateUploadProgress(uploadId, {
+      rowsRead: summary.rowsRead,
+      rowsImported: summary.rowsImported,
+      rowsUpdated: summary.rowsUpdated,
+      progress: 98,
+      currentStep: "Consolidando resultado da importacao."
+    });
+  }
+  Object.assign(summary, periodFromDates(dates));
+}
+
+async function existingHashes(model: "adjustment" | "serviceFeeDetail" | "shopeeIncome", hashes: string[]) {
+  const existing = new Set<string>();
+  for (const hashChunk of chunk([...new Set(hashes)], 1000)) {
+    if (!hashChunk.length) continue;
+    const rows =
+      model === "adjustment"
+        ? await prisma.adjustment.findMany({ where: { rawHash: { in: hashChunk } }, select: { rawHash: true } })
+        : model === "serviceFeeDetail"
+          ? await prisma.serviceFeeDetail.findMany({ where: { rawHash: { in: hashChunk } }, select: { rawHash: true } })
+          : await prisma.shopeeIncome.findMany({ where: { rawHash: { in: hashChunk } }, select: { rawHash: true } });
+    for (const row of rows) existing.add(row.rawHash);
+  }
+  return existing;
+}
+
+async function createManyInChunks(model: "adjustment", data: Prisma.AdjustmentCreateManyInput[]): Promise<void>;
+async function createManyInChunks(model: "serviceFeeDetail", data: Prisma.ServiceFeeDetailCreateManyInput[]): Promise<void>;
+async function createManyInChunks(model: "order", data: Prisma.OrderCreateManyInput[]): Promise<void>;
+async function createManyInChunks(model: "shopeeIncome", data: Prisma.ShopeeIncomeCreateManyInput[]): Promise<void>;
+async function createManyInChunks(
+  model: "adjustment" | "serviceFeeDetail" | "order" | "shopeeIncome",
+  data: Prisma.AdjustmentCreateManyInput[] | Prisma.ServiceFeeDetailCreateManyInput[] | Prisma.OrderCreateManyInput[] | Prisma.ShopeeIncomeCreateManyInput[]
+) {
+  for (const dataChunk of chunk(data as unknown[], 1000)) {
+    if (!dataChunk.length) continue;
+    if (model === "adjustment") {
+      await prisma.adjustment.createMany({ data: dataChunk as Prisma.AdjustmentCreateManyInput[], skipDuplicates: true });
+    } else if (model === "serviceFeeDetail") {
+      await prisma.serviceFeeDetail.createMany({ data: dataChunk as Prisma.ServiceFeeDetailCreateManyInput[], skipDuplicates: true });
+    } else if (model === "order") {
+      await prisma.order.createMany({ data: dataChunk as Prisma.OrderCreateManyInput[], skipDuplicates: true });
+    } else {
+      await prisma.shopeeIncome.createMany({ data: dataChunk as Prisma.ShopeeIncomeCreateManyInput[], skipDuplicates: true });
+    }
+  }
+}
+
+async function importIncomeLegacy(sheets: ParsedSheet[], summary: ImportSummary) {
   const rows = pickRows(sheets);
   const dates: Array<Date | null> = [];
   let rowNumber = 1;

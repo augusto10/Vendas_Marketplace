@@ -70,7 +70,7 @@ export async function getUnifiedSalesReport(period: Period) {
       paidAt: order?.paidAt,
       products,
       skus,
-      status: order ? "Conciliado" : "Sem pedido Shopee"
+      status: order?.paidAt ? "Pago" : "Pendente"
     };
   });
 }
@@ -132,6 +132,7 @@ function differenceInDays(left?: Date | null, right?: Date | null) {
 
 export async function getSalesConciliationReport(period: Period, page = 1, pageSize = 50, status = "all", dateMode: SalesConciliationDateMode = "erp") {
   const currentPage = Math.max(1, page);
+  const today = new Date();
   const shopeePeriodWhere = dateMode === "payment"
     ? { paidAt: { gte: period.start, lte: period.end } }
     : { createdAtOrder: { gte: period.start, lte: period.end } };
@@ -227,6 +228,9 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
     const adjustment = adjustmentsByOrder.get(invoice.customerOrder ?? "");
     const daysFromShopeeOrderToInvoice = differenceInDays(invoice.emissionDate, order?.createdAtOrder);
     const daysFromInvoiceToPayment = differenceInDays(order?.paidAt, invoice.emissionDate);
+    const paymentReferenceDate = order?.createdAtOrder ?? invoice.emissionDate;
+    const paymentOpenDays = order?.paidAt ? null : differenceInDays(today, paymentReferenceDate);
+    const paymentOverdue = paymentOpenDays !== null && paymentOpenDays > 30;
     return {
       id: invoice.id,
       emissionDate: invoice.emissionDate,
@@ -262,15 +266,17 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
       paidAt: order?.paidAt,
       daysFromShopeeOrderToInvoice,
       daysFromInvoiceToPayment,
+      paymentOpenDays,
+      paymentOverdue,
       products: income.products,
       skus: income.skus,
       difference: Number(invoice.totalAmount) - Number(invoice.freightAmount) - income.shopeeGross,
-      status: order ? "Conciliado" : "Sem pedido Shopee"
+      status: order?.paidAt ? "Pago" : "Pendente"
     };
   });
 
-  const reconciledRows = rows.filter((row) => row.status === "Conciliado");
-  const fiscalOnlyRows = rows.filter((row) => row.status !== "Conciliado");
+  const reconciledRows = rows.filter((row) => row.status === "Pago");
+  const fiscalOnlyRows = rows.filter((row) => row.status !== "Pago");
   const dateMatchedRows = reconciledRows.filter((row) => row.daysFromShopeeOrderToInvoice !== null && Math.abs(row.daysFromShopeeOrderToInvoice) <= 3);
   const dateDivergentRows = reconciledRows.filter((row) => row.daysFromShopeeOrderToInvoice !== null && Math.abs(row.daysFromShopeeOrderToInvoice) > 3);
   const paidAfterInvoiceRows = reconciledRows.filter((row) => row.daysFromInvoiceToPayment !== null && row.daysFromInvoiceToPayment >= 0);
@@ -298,6 +304,7 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
     dateMatchedOrders: dateMatchedRows.length,
     dateDivergentOrders: dateDivergentRows.length,
     paidAfterInvoiceOrders: paidAfterInvoiceRows.length,
+    paymentOverdueOrders: fiscalOnlyRows.filter((row) => row.paymentOverdue).length,
     fiscalOnlyOrders: fiscalOnlyRows.length,
     shopeeOnlyOrders: shopeeOnlyOrders.length,
     fiscalTotal: rows.reduce((sum, row) => sum + row.fiscalTotal, 0),
@@ -345,9 +352,9 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
   };
 
   const filteredRows = status === "matched"
-    ? rows.filter((row) => row.status === "Conciliado")
+    ? rows.filter((row) => row.status === "Pago")
     : status === "missing"
-      ? rows.filter((row) => row.status !== "Conciliado")
+      ? rows.filter((row) => row.status !== "Pago")
       : rows;
 
   return {

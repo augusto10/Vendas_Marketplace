@@ -139,6 +139,8 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
     const difal = order.invoices.reduce((sum, invoice) => sum + Number(invoice.estimatedDifal ?? 0), 0);
     const unitsSold = order.invoices.reduce((sum, invoice) => sum + invoice.quantity, 0) || products.reduce((sum, product) => sum + product.quantity, 0);
     const orderAdjustments = adjustmentsByOrder.get(order.marketplaceId) ?? [];
+    const paymentReferenceDate = order.createdAtOrder ?? order.invoices[0]?.emissionDate ?? null;
+    const paymentOpenDays = order.paidAt ? null : differenceInDays(new Date(), paymentReferenceDate);
 
     return {
       id: order.id,
@@ -149,6 +151,8 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
       state: order.state || order.invoices[0]?.state || "-",
       customerName: order.buyerUsername,
       status: order.paidAt ? "Pago" as const : "Pendente" as const,
+      paymentOpenDays,
+      paymentOverdue: paymentOpenDays !== null && paymentOpenDays > 30,
       shopeeGross,
       received,
       commission,
@@ -256,6 +260,18 @@ function matchesStatusFilter(order: OrderDetails, status: OrderStatusFilter) {
   if (status === "paid") return order.status === "Pago";
   if (status === "unpaid") return order.status === "Pendente";
   return true;
+}
+
+function startOfLocalDay(date?: Date | null) {
+  if (!date) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function differenceInDays(left?: Date | null, right?: Date | null) {
+  const leftDay = startOfLocalDay(left);
+  const rightDay = startOfLocalDay(right);
+  if (!leftDay || !rightDay) return null;
+  return Math.round((leftDay.getTime() - rightDay.getTime()) / 86400000);
 }
 
 function isRelevantAdjustmentAlert(adjustment: AdjustmentAlert) {

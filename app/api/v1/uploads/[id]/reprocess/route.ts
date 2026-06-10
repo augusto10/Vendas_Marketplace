@@ -4,6 +4,10 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { auditLog } from "@/lib/services/audit-service";
 import { reprocessUpload } from "@/lib/services/import-service";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
+
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();

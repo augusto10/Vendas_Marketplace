@@ -22,7 +22,21 @@ export const PERMISSIONS = [
   "system.maintenance",
   "api.tokens.view",
   "api.tokens.create",
-  "api.tokens.revoke"
+  "api.tokens.revoke",
+  "atacado.dashboard.view",
+  "atacado.clientes.view",
+  "atacado.clientes.manage",
+  "atacado.produtos.view",
+  "atacado.produtos.manage",
+  "atacado.pedidos.view",
+  "atacado.pedidos.create",
+  "atacado.pedidos.update",
+  "atacado.separacao.view",
+  "atacado.separacao.update",
+  "atacado.financeiro.view",
+  "atacado.financeiro.update",
+  "atacado.entregas.view",
+  "atacado.entregas.update"
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number];
@@ -30,5 +44,6 @@ export type PermissionKey = (typeof PERMISSIONS)[number];
 export function hasPermission(user: { roles: string[]; permissions: string[] } | null, permission: PermissionKey) {
   if (!user) return false;
   if (user.roles.includes("master")) return true;
+  if (user.roles.includes("admin") && permission.endsWith(".view")) return true;
   return user.permissions.includes(permission);
 }

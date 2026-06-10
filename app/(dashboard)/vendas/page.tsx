@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PeriodFilter } from "@/components/period-filter";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +56,17 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
         </div>
       </PeriodFilter>
       <div className="rounded-md border bg-muted/35 px-4 py-3 text-sm text-muted-foreground">{dateModeLabels[dateMode].description}</div>
+      {summary.paymentOverdueOrders > 0 ? (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-100">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
+          <div>
+            <div className="font-semibold">Pagamentos pendentes acima de 30 dias</div>
+            <div className="text-amber-700 dark:text-amber-100/85">
+              {summary.paymentOverdueOrders.toLocaleString("pt-BR")} pedido(s) sem data de pagamento ha mais de 30 dias no periodo filtrado.
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <SummaryCard
@@ -164,14 +175,22 @@ export default async function VendasPage({ searchParams }: { searchParams: Promi
                   <SignedMoneyCell value={row.affiliateCommissionFee} />
                   <TableCell>{currency(row.difal)}</TableCell>
                   <TableCell>
-                    <Badge
-                      className={cn(
-                        row.status === "Conciliado" && "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20",
-                        row.status !== "Conciliado" && "bg-amber-500/15 text-amber-300 hover:bg-amber-500/20"
-                      )}
-                    >
-                      {row.status === "Conciliado" ? "Concluido" : "Pendente"}
-                    </Badge>
+                    <div className="space-y-1">
+                      <Badge
+                        className={cn(
+                          row.status === "Pago" && "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20",
+                          row.status !== "Pago" && "bg-amber-500/15 text-amber-300 hover:bg-amber-500/20"
+                        )}
+                      >
+                        {row.paymentOverdue ? <AlertTriangle className="mr-1 h-3.5 w-3.5" /> : null}
+                        {row.status}
+                      </Badge>
+                      {row.paymentOverdue ? (
+                        <div className="max-w-[180px] whitespace-normal text-xs text-amber-600 dark:text-amber-300">
+                          Em aberto ha {row.paymentOpenDays} dias
+                        </div>
+                      ) : null}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

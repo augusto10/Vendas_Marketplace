@@ -37,7 +37,21 @@ const permissions = [
   "api.tokens.view",
   "api.tokens.create",
   "api.tokens.revoke",
-  "api.logs.view"
+  "api.logs.view",
+  "atacado.dashboard.view",
+  "atacado.clientes.view",
+  "atacado.clientes.manage",
+  "atacado.produtos.view",
+  "atacado.produtos.manage",
+  "atacado.pedidos.view",
+  "atacado.pedidos.create",
+  "atacado.pedidos.update",
+  "atacado.separacao.view",
+  "atacado.separacao.update",
+  "atacado.financeiro.view",
+  "atacado.financeiro.update",
+  "atacado.entregas.view",
+  "atacado.entregas.update"
 ];
 
 const rolePermissions: Record<string, string[]> = {
@@ -51,7 +65,35 @@ const rolePermissions: Record<string, string[]> = {
   financeiro: ["dashboard.view", "finance.view", "finance.export", "fees.view"],
   fiscal: ["dashboard.view", "fiscal.view", "fiscal.export"],
   operador: ["uploads.view", "uploads.create"],
-  visualizador: ["dashboard.view", "finance.view", "fiscal.view", "fees.view", "reports.view"]
+  visualizador: ["dashboard.view", "finance.view", "fiscal.view", "fees.view", "reports.view"],
+  admin_atacado: permissions.filter((key) => key.startsWith("atacado.")),
+  vendas_atacado: [
+    "atacado.dashboard.view",
+    "atacado.clientes.view",
+    "atacado.clientes.manage",
+    "atacado.produtos.view",
+    "atacado.pedidos.view",
+    "atacado.pedidos.create",
+    "atacado.pedidos.update"
+  ],
+  separacao_atacado: [
+    "atacado.dashboard.view",
+    "atacado.produtos.view",
+    "atacado.pedidos.view",
+    "atacado.separacao.view",
+    "atacado.separacao.update"
+  ],
+  financeiro_atacado: [
+    "atacado.dashboard.view",
+    "atacado.pedidos.view",
+    "atacado.financeiro.view",
+    "atacado.financeiro.update"
+  ],
+  motorista_atacado: [
+    "atacado.pedidos.view",
+    "atacado.entregas.view",
+    "atacado.entregas.update"
+  ]
 };
 
 async function main() {
@@ -106,6 +148,34 @@ async function main() {
     update: {},
     create: { userId: master.id, roleId: masterRole.id }
   });
+
+  const testUsers = [
+    { name: "Admin Atacado", email: "admin.atacado@empresa.com", role: "admin_atacado" },
+    { name: "Vendedor Atacado", email: "vendas.atacado@empresa.com", role: "vendas_atacado" },
+    { name: "Separacao Atacado", email: "separacao.atacado@empresa.com", role: "separacao_atacado" },
+    { name: "Financeiro Atacado", email: "financeiro.atacado@empresa.com", role: "financeiro_atacado" },
+    { name: "Motorista Atacado", email: "motorista.atacado@empresa.com", role: "motorista_atacado" }
+  ];
+
+  for (const testUser of testUsers) {
+    const role = await prisma.role.findUniqueOrThrow({ where: { slug: testUser.role } });
+    const user = await prisma.user.upsert({
+      where: { email: testUser.email },
+      update: { name: testUser.name, passwordHash, status: "ACTIVE" },
+      create: {
+        name: testUser.name,
+        email: testUser.email,
+        passwordHash,
+        status: "ACTIVE"
+      }
+    });
+
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: user.id, roleId: role.id } },
+      update: {},
+      create: { userId: user.id, roleId: role.id }
+    });
+  }
 
   const taxRules = [
     ["SP", 18, 12, 0],

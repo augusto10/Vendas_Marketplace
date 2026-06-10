@@ -45,19 +45,25 @@ enum ApiTokenStatus {
 }
 
 model User {
-  id            String     @id @default(uuid()) @db.Uuid
-  name          String
-  email         String     @unique
-  imageUrl      String?
-  passwordHash  String?
-  status        UserStatus @default(ACTIVE)
-  lastLoginAt   DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  roles         UserRole[]
-  uploads       Upload[]
-  auditLogs     AuditLog[]
-  apiTokens     ApiToken[]
+  id                         String                   @id @default(uuid()) @db.Uuid
+  name                       String
+  email                      String                   @unique
+  imageUrl                   String?
+  passwordHash               String?
+  status                     UserStatus               @default(ACTIVE)
+  lastLoginAt                DateTime?
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  roles                      UserRole[]
+  uploads                    Upload[]
+  auditLogs                  AuditLog[]
+  apiTokens                  ApiToken[]
+  atacadoPedidosVendidos     AtacadoPedido[]          @relation("AtacadoPedidoVendedor")
+  atacadoAnexos              AtacadoAnexo[]           @relation("AtacadoAnexoUploader")
+  atacadoPagamentos          AtacadoPagamento[]       @relation("AtacadoPagamentoRegistradoPor")
+  atacadoEntregasMotorista   AtacadoEntrega[]         @relation("AtacadoEntregaMotorista")
+  atacadoEntregasRegistradas AtacadoEntrega[]         @relation("AtacadoEntregaRegistradoPor")
+  atacadoHistoricoStatus     AtacadoHistoricoStatus[] @relation("AtacadoHistoricoUsuario")
 
   @@map("users")
 }
@@ -111,16 +117,16 @@ model UserRole {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid()) @db.Uuid
-  actorId    String?  @db.Uuid
-  action     String
-  entity     String
-  entityId   String?
-  metadata   Json?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
-  actor      User?    @relation(fields: [actorId], references: [id])
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @db.Uuid
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  actor     User?    @relation(fields: [actorId], references: [id])
 
   @@index([actorId, createdAt])
   @@index([entity, entityId])
@@ -128,25 +134,28 @@ model AuditLog {
 }
 
 model Upload {
-  id             String        @id @default(uuid()) @db.Uuid
-  type           UploadType
-  status         UploadStatus  @default(PENDING)
-  originalName   String
-  storagePath    String?
-  checksum       String
-  periodStart    DateTime?
-  periodEnd      DateTime?
-  rowsRead       Int           @default(0)
-  rowsImported   Int           @default(0)
-  rowsUpdated    Int           @default(0)
-  errorsCount    Int           @default(0)
-  detectedFees   Int           @default(0)
-  uploadedById   String?       @db.Uuid
-  summary        Json?
-  createdAt      DateTime      @default(now())
-  processedAt    DateTime?
-  uploadedBy     User?         @relation(fields: [uploadedById], references: [id])
-  importErrors   ImportError[]
+  id           String        @id @default(uuid()) @db.Uuid
+  type         UploadType
+  status       UploadStatus  @default(PENDING)
+  originalName String
+  storagePath  String?
+  checksum     String
+  periodStart  DateTime?
+  periodEnd    DateTime?
+  rowsRead     Int           @default(0)
+  rowsTotal    Int           @default(0)
+  rowsImported Int           @default(0)
+  rowsUpdated  Int           @default(0)
+  progress     Int           @default(0)
+  currentStep  String?
+  errorsCount  Int           @default(0)
+  detectedFees Int           @default(0)
+  uploadedById String?       @db.Uuid
+  summary      Json?
+  createdAt    DateTime      @default(now())
+  processedAt  DateTime?
+  uploadedBy   User?         @relation(fields: [uploadedById], references: [id])
+  importErrors ImportError[]
 
   @@unique([checksum, type])
   @@index([type, createdAt])
@@ -154,18 +163,18 @@ model Upload {
 }
 
 model Order {
-  id             String      @id @default(uuid()) @db.Uuid
-  marketplaceId  String      @unique
+  id             String         @id @default(uuid()) @db.Uuid
+  marketplaceId  String         @unique
   state          String?
   createdAtOrder DateTime?
   paidAt         DateTime?
   buyerUsername  String?
-  grossAmount    Decimal?    @db.Decimal(14, 2)
-  netAmount      Decimal?    @db.Decimal(14, 2)
-  buyerPaid      Decimal?    @db.Decimal(14, 2)
+  grossAmount    Decimal?       @db.Decimal(14, 2)
+  netAmount      Decimal?       @db.Decimal(14, 2)
+  buyerPaid      Decimal?       @db.Decimal(14, 2)
   carrier        String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   items          OrderItem[]
   invoices       SalesInvoice[]
   incomes        ShopeeIncome[]
@@ -216,76 +225,76 @@ model SalesInvoice {
 }
 
 model WalletTransaction {
-  id              String         @id @default(uuid()) @db.Uuid
-  transactionDate DateTime
-  transactionType String
-  description     String?
+  id                 String         @id @default(uuid()) @db.Uuid
+  transactionDate    DateTime
+  transactionType    String
+  description        String?
   orderMarketplaceId String?
-  direction       MoneyDirection
-  amount          Decimal        @db.Decimal(14, 2)
-  status          String?
-  balanceAfter    Decimal?       @db.Decimal(14, 2)
-  adjustmentValue Decimal?       @db.Decimal(14, 2)
-  rawHash         String         @unique
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  direction          MoneyDirection
+  amount             Decimal        @db.Decimal(14, 2)
+  status             String?
+  balanceAfter       Decimal?       @db.Decimal(14, 2)
+  adjustmentValue    Decimal?       @db.Decimal(14, 2)
+  rawHash            String         @unique
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([transactionDate, transactionType])
   @@map("wallet_transactions")
 }
 
 model AcceleraTransaction {
-  id                 String   @id @default(uuid()) @db.Uuid
+  id                 String    @id @default(uuid()) @db.Uuid
   rescueDate         DateTime?
   rescueId           String?
   orderMarketplaceId String?
-  availableAmount    Decimal? @db.Decimal(14, 2)
-  rescuePercent      Decimal? @db.Decimal(7, 4)
-  rescuedAmount      Decimal? @db.Decimal(14, 2)
-  serviceFee         Decimal? @db.Decimal(14, 2)
-  receivedAmount     Decimal? @db.Decimal(14, 2)
-  remainingAmount    Decimal? @db.Decimal(14, 2)
-  refundedAmount     Decimal? @db.Decimal(14, 2)
-  orderGrossAmount   Decimal? @db.Decimal(14, 2)
-  pendingAmount      Decimal? @db.Decimal(14, 2)
+  availableAmount    Decimal?  @db.Decimal(14, 2)
+  rescuePercent      Decimal?  @db.Decimal(7, 4)
+  rescuedAmount      Decimal?  @db.Decimal(14, 2)
+  serviceFee         Decimal?  @db.Decimal(14, 2)
+  receivedAmount     Decimal?  @db.Decimal(14, 2)
+  remainingAmount    Decimal?  @db.Decimal(14, 2)
+  refundedAmount     Decimal?  @db.Decimal(14, 2)
+  orderGrossAmount   Decimal?  @db.Decimal(14, 2)
+  pendingAmount      Decimal?  @db.Decimal(14, 2)
   status             String?
   lastTransactionAt  DateTime?
   dueDate            DateTime?
-  rawHash            String   @unique
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  rawHash            String    @unique
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@index([rescueDate, status])
   @@map("accelera_transactions")
 }
 
 model ShopeeIncome {
-  id                      String   @id @default(uuid()) @db.Uuid
-  orderMarketplaceId      String
-  sku                     String?
-  productName             String?
-  orderCreatedAt          DateTime?
-  paymentCompletedAt      DateTime?
-  releasedAmount          Decimal? @db.Decimal(14, 2)
-  productPrice            Decimal? @db.Decimal(14, 2)
-  refundAmount            Decimal? @db.Decimal(14, 2)
-  logisticsFreight        Decimal? @db.Decimal(14, 2)
-  buyerShippingFee        Decimal? @db.Decimal(14, 2)
-  shopeeShippingDiscount  Decimal? @db.Decimal(14, 2)
-  reverseShippingFee      Decimal? @db.Decimal(14, 2)
-  sellerReturnFee         Decimal? @db.Decimal(14, 2)
-  commissionFee           Decimal? @db.Decimal(14, 2)
-  serviceFee              Decimal? @db.Decimal(14, 2)
-  transactionFee          Decimal? @db.Decimal(14, 2)
-  affiliateCommissionFee  Decimal? @db.Decimal(14, 2)
-  buyerPaidAmount         Decimal? @db.Decimal(14, 2)
-  carrier                 String?
-  buyerRefundedAmount     Decimal? @db.Decimal(14, 2)
-  orderId                 String?  @db.Uuid
-  rawHash                 String   @unique
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-  order                   Order?   @relation(fields: [orderId], references: [id])
+  id                     String    @id @default(uuid()) @db.Uuid
+  orderMarketplaceId     String
+  sku                    String?
+  productName            String?
+  orderCreatedAt         DateTime?
+  paymentCompletedAt     DateTime?
+  releasedAmount         Decimal?  @db.Decimal(14, 2)
+  productPrice           Decimal?  @db.Decimal(14, 2)
+  refundAmount           Decimal?  @db.Decimal(14, 2)
+  logisticsFreight       Decimal?  @db.Decimal(14, 2)
+  buyerShippingFee       Decimal?  @db.Decimal(14, 2)
+  shopeeShippingDiscount Decimal?  @db.Decimal(14, 2)
+  reverseShippingFee     Decimal?  @db.Decimal(14, 2)
+  sellerReturnFee        Decimal?  @db.Decimal(14, 2)
+  commissionFee          Decimal?  @db.Decimal(14, 2)
+  serviceFee             Decimal?  @db.Decimal(14, 2)
+  transactionFee         Decimal?  @db.Decimal(14, 2)
+  affiliateCommissionFee Decimal?  @db.Decimal(14, 2)
+  buyerPaidAmount        Decimal?  @db.Decimal(14, 2)
+  carrier                String?
+  buyerRefundedAmount    Decimal?  @db.Decimal(14, 2)
+  orderId                String?   @db.Uuid
+  rawHash                String    @unique
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  order                  Order?    @relation(fields: [orderId], references: [id])
 
   @@index([orderMarketplaceId])
   @@index([sku])
@@ -293,39 +302,39 @@ model ShopeeIncome {
 }
 
 model ServiceFeeDetail {
-  id                 String   @id @default(uuid()) @db.Uuid
+  id                 String    @id @default(uuid()) @db.Uuid
   orderMarketplaceId String?
   feeName            String
-  amount             Decimal  @db.Decimal(14, 2)
+  amount             Decimal   @db.Decimal(14, 2)
   occurredAt         DateTime?
-  rawHash            String   @unique
-  createdAt          DateTime @default(now())
+  rawHash            String    @unique
+  createdAt          DateTime  @default(now())
 
   @@index([feeName])
   @@map("service_fee_details")
 }
 
 model Adjustment {
-  id                 String   @id @default(uuid()) @db.Uuid
+  id                 String    @id @default(uuid()) @db.Uuid
   orderMarketplaceId String?
   description        String?
   reason             String?
-  amount             Decimal  @db.Decimal(14, 2)
+  amount             Decimal   @db.Decimal(14, 2)
   occurredAt         DateTime?
-  rawHash            String   @unique
-  createdAt          DateTime @default(now())
+  rawHash            String    @unique
+  createdAt          DateTime  @default(now())
 
   @@map("adjustments")
 }
 
 model DetectedFee {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String       @id @default(uuid()) @db.Uuid
   source      String
   name        String
-  status      FeeStatus @default(DETECTED)
-  categoryId  String?   @db.Uuid
-  firstSeenAt DateTime  @default(now())
-  lastSeenAt  DateTime  @default(now())
+  status      FeeStatus    @default(DETECTED)
+  categoryId  String?      @db.Uuid
+  firstSeenAt DateTime     @default(now())
+  lastSeenAt  DateTime     @default(now())
   category    TaxCategory? @relation(fields: [categoryId], references: [id])
 
   @@unique([source, name])
@@ -343,18 +352,18 @@ model TaxCategory {
 }
 
 model StateTaxRule {
-  id                 String   @id @default(uuid()) @db.Uuid
-  uf                 String
-  internalRate       Decimal  @db.Decimal(7, 4)
-  interstateRate     Decimal  @db.Decimal(7, 4)
-  fcpRate            Decimal  @default(0) @db.Decimal(7, 4)
-  validFrom          DateTime
-  validTo            DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id             String    @id @default(uuid()) @db.Uuid
+  uf             String
+  internalRate   Decimal   @db.Decimal(7, 4)
+  interstateRate Decimal   @db.Decimal(7, 4)
+  fcpRate        Decimal   @default(0) @db.Decimal(7, 4)
+  validFrom      DateTime
+  validTo        DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  @@index([uf, validFrom, validTo])
   @@unique([uf, validFrom])
+  @@index([uf, validFrom, validTo])
   @@map("state_tax_rules")
 }
 
@@ -399,4 +408,251 @@ model ApiToken {
 
   @@index([status])
   @@map("api_tokens")
+}
+
+enum AtacadoClienteStatus {
+  ATIVO
+  INATIVO
+}
+
+enum AtacadoProdutoStatus {
+  ATIVO
+  INATIVO
+}
+
+enum AtacadoPedidoStatus {
+  RASCUNHO
+  AGUARDANDO_SEPARACAO
+  EM_SEPARACAO
+  SEPARADO
+  AGUARDANDO_PAGAMENTO
+  PAGO
+  EM_EXPEDICAO
+  EM_ENTREGA
+  ENTREGUE
+  CANCELADO
+  FALTA_ESTOQUE
+}
+
+enum AtacadoAnexoTipo {
+  PRODUTO
+  PEDIDO
+  SEPARACAO
+  COMPROVANTE_PIX
+  ENTREGA
+  ASSINATURA
+}
+
+enum AtacadoPagamentoStatus {
+  PENDENTE
+  PARCIAL
+  PAGO
+}
+
+enum AtacadoEntregaTipo {
+  ENTREGA_PROPRIA
+  TRANSPORTADORA
+  RETIRADA
+}
+
+enum AtacadoEntregaStatus {
+  PENDENTE
+  EM_ROTA
+  ENTREGUE
+  CANCELADA
+}
+
+model AtacadoCliente {
+  id          String               @id @default(uuid()) @db.Uuid
+  nome        String
+  telefone    String?
+  cidade      String?
+  estado      String?
+  endereco    String?
+  documento   String?
+  observacoes String?
+  status      AtacadoClienteStatus @default(ATIVO)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  pedidos     AtacadoPedido[]
+
+  @@index([nome])
+  @@index([cidade, estado])
+  @@index([documento])
+  @@map("atacado_clientes")
+}
+
+model AtacadoProduto {
+  id                 String               @id @default(uuid()) @db.Uuid
+  referencia         String?
+  nome               String
+  categoria          String?
+  cor                String?
+  grade              String?
+  quantidadePorCaixa Int                  @default(12)
+  precoPorCaixa      Decimal              @db.Decimal(14, 2)
+  status             AtacadoProdutoStatus @default(ATIVO)
+  observacoes        String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  fotos              AtacadoProdutoFoto[]
+  itens              AtacadoPedidoItem[]
+
+  @@index([nome])
+  @@index([referencia])
+  @@map("atacado_produtos")
+}
+
+model AtacadoProdutoFoto {
+  id        String         @id @default(uuid()) @db.Uuid
+  produtoId String         @db.Uuid
+  url       String
+  publicId  String?
+  mimeType  String?
+  size      Int?
+  metadata  Json?
+  principal Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  produto   AtacadoProduto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  @@index([produtoId])
+  @@map("atacado_produto_fotos")
+}
+
+model AtacadoPedido {
+  id              String                   @id @default(uuid()) @db.Uuid
+  numero          String                   @unique
+  clienteId       String                   @db.Uuid
+  vendedorId      String?                  @db.Uuid
+  status          AtacadoPedidoStatus      @default(AGUARDANDO_SEPARACAO)
+  observacao      String?
+  valorTotal      Decimal                  @default(0) @db.Decimal(14, 2)
+  criadoEm        DateTime                 @default(now())
+  atualizadoEm    DateTime                 @updatedAt
+  cliente         AtacadoCliente           @relation(fields: [clienteId], references: [id])
+  vendedor        User?                    @relation("AtacadoPedidoVendedor", fields: [vendedorId], references: [id])
+  itens           AtacadoPedidoItem[]
+  anexos          AtacadoAnexo[]
+  pagamentos      AtacadoPagamento[]
+  entregas        AtacadoEntrega[]
+  assinaturas     AtacadoAssinatura[]
+  historicoStatus AtacadoHistoricoStatus[]
+
+  @@index([clienteId])
+  @@index([vendedorId])
+  @@index([status, criadoEm])
+  @@map("atacado_pedidos")
+}
+
+model AtacadoPedidoItem {
+  id               String         @id @default(uuid()) @db.Uuid
+  pedidoId         String         @db.Uuid
+  produtoId        String         @db.Uuid
+  quantidadeCaixas Int
+  quantidadePares  Int
+  precoCaixa       Decimal        @db.Decimal(14, 2)
+  valorTotal       Decimal        @db.Decimal(14, 2)
+  observacao       String?
+  pedido           AtacadoPedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  produto          AtacadoProduto @relation(fields: [produtoId], references: [id])
+
+  @@index([pedidoId])
+  @@index([produtoId])
+  @@map("atacado_pedido_itens")
+}
+
+model AtacadoAnexo {
+  id           String           @id @default(uuid()) @db.Uuid
+  pedidoId     String?          @db.Uuid
+  uploadedById String?          @db.Uuid
+  tipo         AtacadoAnexoTipo
+  url          String
+  publicId     String?
+  originalName String?
+  mimeType     String?
+  size         Int?
+  metadata     Json?
+  createdAt    DateTime         @default(now())
+  pedido       AtacadoPedido?   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  uploadedBy   User?            @relation("AtacadoAnexoUploader", fields: [uploadedById], references: [id])
+
+  @@index([pedidoId])
+  @@index([uploadedById])
+  @@index([tipo])
+  @@map("atacado_anexos")
+}
+
+model AtacadoPagamento {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  pedidoId            String                 @db.Uuid
+  registradoPorId     String?                @db.Uuid
+  status              AtacadoPagamentoStatus @default(PENDENTE)
+  valorPago           Decimal                @default(0) @db.Decimal(14, 2)
+  comprovanteUrl      String?
+  comprovantePublicId String?
+  observacao          String?
+  registradoEm        DateTime               @default(now())
+  pedido              AtacadoPedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  registradoPor       User?                  @relation("AtacadoPagamentoRegistradoPor", fields: [registradoPorId], references: [id])
+
+  @@index([pedidoId])
+  @@index([status])
+  @@map("atacado_pagamentos")
+}
+
+model AtacadoEntrega {
+  id              String               @id @default(uuid()) @db.Uuid
+  pedidoId        String               @db.Uuid
+  motoristaId     String?              @db.Uuid
+  registradoPorId String?              @db.Uuid
+  tipo            AtacadoEntregaTipo
+  status          AtacadoEntregaStatus @default(PENDENTE)
+  endereco        String?
+  reciboUrl       String?
+  reciboPublicId  String?
+  latitude        Decimal?             @db.Decimal(10, 7)
+  longitude       Decimal?             @db.Decimal(10, 7)
+  observacao      String?
+  entregueEm      DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  pedido          AtacadoPedido        @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  motorista       User?                @relation("AtacadoEntregaMotorista", fields: [motoristaId], references: [id])
+  registradoPor   User?                @relation("AtacadoEntregaRegistradoPor", fields: [registradoPorId], references: [id])
+
+  @@index([pedidoId])
+  @@index([motoristaId])
+  @@index([status])
+  @@map("atacado_entregas")
+}
+
+model AtacadoAssinatura {
+  id        String        @id @default(uuid()) @db.Uuid
+  pedidoId  String        @db.Uuid
+  entregaId String?       @db.Uuid
+  url       String
+  publicId  String?
+  metadata  Json?
+  createdAt DateTime      @default(now())
+  pedido    AtacadoPedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  @@index([pedidoId])
+  @@index([entregaId])
+  @@map("atacado_assinaturas")
+}
+
+model AtacadoHistoricoStatus {
+  id             String               @id @default(uuid()) @db.Uuid
+  pedidoId       String               @db.Uuid
+  usuarioId      String?              @db.Uuid
+  statusAnterior AtacadoPedidoStatus?
+  statusNovo     AtacadoPedidoStatus
+  observacao     String?
+  createdAt      DateTime             @default(now())
+  pedido         AtacadoPedido        @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  usuario        User?                @relation("AtacadoHistoricoUsuario", fields: [usuarioId], references: [id])
+
+  @@index([pedidoId, createdAt])
+  @@index([usuarioId])
+  @@map("atacado_historico_status")
 }

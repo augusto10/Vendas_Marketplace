@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, FileSpreadsheet, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,17 @@ import { cn } from "@/lib/utils";
 
 type UploadState = "idle" | "uploading" | "done" | "error";
 type UploadPhase = "sending" | "processing";
+type UploadStatusPayload = {
+  id: string;
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+  rowsRead: number;
+  rowsTotal: number;
+  rowsImported: number;
+  rowsUpdated: number;
+  progress: number;
+  currentStep: string | null;
+  lastError: string | null;
+};
 
 export function UploadForm() {
   const router = useRouter();
@@ -17,7 +28,24 @@ export function UploadForm() {
   const [phase, setPhase] = useState<UploadPhase>("sending");
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
+  const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
+  const [processingSeconds, setProcessingSeconds] = useState(0);
+  const [currentStep, setCurrentStep] = useState("");
   const fileMeta = useMemo(() => (file ? `${formatBytes(file.size)} - ${file.type || "Arquivo de planilha"}` : null), [file]);
+  const slowProcessing = state === "uploading" && phase === "processing" && processingSeconds >= 180;
+
+  useEffect(() => {
+    if (state !== "uploading" || phase !== "processing" || !processingStartedAt) {
+      setProcessingSeconds(0);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setProcessingSeconds(Math.floor((Date.now() - processingStartedAt) / 1000));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [phase, processingStartedAt, state]);
 
   async function handleImport() {
     if (!file || state === "uploading") return;
@@ -26,12 +54,41 @@ export function UploadForm() {
     setPhase("sending");
     setMessage("");
     setProgress(0);
+    setProcessingSeconds(0);
+    setProcessingStartedAt(null);
+    setCurrentStep("");
 
     try {
       const formData = new FormData();
       formData.append("file", file);
 
-      await uploadFile(formData, setProgress, setPhase);
+      const uploadId = await startUpload(formData, setProgress, (nextPhase) => {
+        setPhase(nextPhase);
+        if (nextPhase === "processing") {
+          setProcessingStartedAt((current) => current ?? Date.now());
+          setProgress((current) => Math.max(current, 15));
+        }
+      });
+
+      const stopPolling = pollUploadStatus(uploadId, (status) => {
+        setProgress(status.progress);
+        setCurrentStep(status.currentStep ?? "");
+      });
+
+      try {
+        const response = await fetch(`/api/v1/uploads/${uploadId}/process`, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error?.message ?? "Falha ao processar arquivo.");
+        }
+      } finally {
+        stopPolling();
+      }
+
+      const finalStatus = await getUploadStatus(uploadId);
+      if (finalStatus.status === "FAILED") {
+        throw new Error(finalStatus.lastError ?? finalStatus.currentStep ?? "A importacao falhou.");
+      }
 
       setProgress(100);
       setState("done");
@@ -49,6 +106,9 @@ export function UploadForm() {
     setPhase("sending");
     setProgress(0);
     setMessage("");
+    setProcessingSeconds(0);
+    setProcessingStartedAt(null);
+    setCurrentStep("");
     router.refresh();
   }
 
@@ -58,6 +118,9 @@ export function UploadForm() {
     setPhase("sending");
     setProgress(0);
     setMessage("");
+    setProcessingSeconds(0);
+    setProcessingStartedAt(null);
+    setCurrentStep("");
   }
 
   return (
@@ -103,8 +166,8 @@ export function UploadForm() {
       </div>
 
       {(state === "uploading" || state === "done") ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+        <div className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-sm">
+          <div className="flex items-center justify-between text-sm font-semibold text-foreground">
             <span>
               {state === "done"
                 ? "Carregamento concluido"
@@ -112,7 +175,7 @@ export function UploadForm() {
                   ? "Processando planilha"
                   : "Carregando arquivo"}
             </span>
-            <span>{phase === "processing" && state === "uploading" ? "Enviado" : `${progress}%`}</span>
+            <span>{progress}%</span>
           </div>
           <div className="relative h-3 overflow-hidden rounded-full bg-muted ring-1 ring-border">
             <div
@@ -128,10 +191,12 @@ export function UploadForm() {
             ) : null}
           </div>
           {state === "uploading" ? (
-            <div className="text-xs text-muted-foreground">
-              {phase === "processing"
-                ? "Arquivo enviado. Agora a planilha esta sendo validada e importada."
-                : "O percentual acompanha o envio real do arquivo. Planilhas grandes podem levar mais tempo."}
+            <div className={cn("rounded-md border px-3 py-2 text-sm font-medium", slowProcessing ? "border-amber-300 bg-amber-50 text-amber-900" : "border-primary/25 bg-primary/10 text-foreground")}>
+              {slowProcessing
+                ? "A importacao esta demorando mais que o normal. Nao envie o mesmo arquivo de novo ainda; aguarde ou atualize o historico para verificar o status."
+                : phase === "processing"
+                  ? currentStep || "Arquivo enviado. Acompanhando o processamento real no banco."
+                  : "O percentual acompanha o envio real do arquivo. Depois disso a planilha sera validada e importada."}
             </div>
           ) : null}
           {state === "done" ? (
@@ -150,9 +215,9 @@ export function UploadForm() {
       ) : null}
 
       {state === "error" ? (
-        <div className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm font-medium text-destructive">
+        <div className="flex min-w-0 items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm font-medium text-destructive">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{message}</span>
+          <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{message}</span>
         </div>
       ) : null}
     </div>
@@ -165,18 +230,18 @@ function formatBytes(size: number) {
   return `${(size / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function uploadFile(
+function startUpload(
   formData: FormData,
   onProgress: (progress: number) => void,
   onPhaseChange: (phase: UploadPhase) => void
 ) {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const request = new XMLHttpRequest();
 
     request.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
       const percent = Math.round((event.loaded / event.total) * 100);
-      onProgress(Math.min(percent, 100));
+      onProgress(Math.min(Math.max(1, Math.round(percent / 10)), 10));
       if (event.loaded === event.total) {
         onPhaseChange("processing");
       }
@@ -184,7 +249,7 @@ function uploadFile(
 
     request.upload.onload = () => {
       onPhaseChange("processing");
-      onProgress(100);
+      onProgress(15);
     };
 
     request.onload = () => {
@@ -194,7 +259,7 @@ function uploadFile(
           reject(new Error(result.error?.message ?? "Falha ao importar arquivo."));
           return;
         }
-        resolve();
+        resolve(result.data.uploadId);
       } catch {
         reject(new Error(request.status >= 500 ? "Falha no servidor ao importar arquivo." : "Resposta invalida ao importar arquivo."));
       }
@@ -202,7 +267,34 @@ function uploadFile(
 
     request.onerror = () => reject(new Error("Falha de conexao ao importar arquivo."));
     request.ontimeout = () => reject(new Error("Tempo esgotado ao importar. Tente refazer o upload."));
-    request.open("POST", "/api/v1/uploads");
+    request.open("POST", "/api/v1/uploads/start");
     request.send(formData);
   });
+}
+
+function pollUploadStatus(uploadId: string, onStatus: (status: UploadStatusPayload) => void) {
+  let active = true;
+  const tick = async () => {
+    if (!active) return;
+    try {
+      onStatus(await getUploadStatus(uploadId));
+    } catch {
+      // A proxima consulta pode recuperar de uma falha momentanea de rede.
+    }
+  };
+  void tick();
+  const timer = window.setInterval(tick, 1200);
+  return () => {
+    active = false;
+    window.clearInterval(timer);
+  };
+}
+
+async function getUploadStatus(uploadId: string): Promise<UploadStatusPayload> {
+  const response = await fetch(`/api/v1/uploads/${uploadId}`, { cache: "no-store" });
+  const result = await response.json();
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error?.message ?? "Falha ao consultar andamento.");
+  }
+  return result.data;
 }

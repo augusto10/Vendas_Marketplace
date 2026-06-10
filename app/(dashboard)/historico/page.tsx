@@ -1,3 +1,4 @@
+import { CheckCircle2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +13,7 @@ export default async function HistoricoPage() {
     take: 50,
     include: { uploadedBy: { select: { name: true } } }
   });
-  const uploads = uploadsRaw.sort((left, right) => uploadImportedAt(right).getTime() - uploadImportedAt(left).getTime());
+  const uploads = latestAttemptByFile(uploadsRaw.sort((left, right) => uploadImportedAt(right).getTime() - uploadImportedAt(left).getTime()));
 
   return (
     <div className="space-y-6">
@@ -50,6 +51,7 @@ export default async function HistoricoPage() {
                         upload.status === "PENDING" && "bg-muted text-muted-foreground hover:bg-muted"
                       )}
                     >
+                      {upload.status === "COMPLETED" ? <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> : null}
                       {upload.status}
                     </Badge>
                   </TableCell>
@@ -66,4 +68,13 @@ export default async function HistoricoPage() {
 
 function uploadImportedAt(upload: { processedAt: Date | null; createdAt: Date }) {
   return upload.processedAt ?? upload.createdAt;
+}
+
+function latestAttemptByFile<T extends { originalName: string; type: string; processedAt: Date | null; createdAt: Date }>(uploads: T[]) {
+  const latest = new Map<string, T>();
+  for (const upload of uploads) {
+    const key = `${upload.type}:${upload.originalName.trim().toLowerCase()}`;
+    if (!latest.has(key)) latest.set(key, upload);
+  }
+  return Array.from(latest.values());
 }

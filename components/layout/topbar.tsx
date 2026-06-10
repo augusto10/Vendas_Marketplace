@@ -6,7 +6,7 @@ import { MobileMenu } from "@/components/layout/mobile-menu";
 import { LogoutButton } from "@/features/auth/logout-button";
 import { ThemeToggle } from "@/features/theme/theme-toggle";
 
-export function Topbar({ name, image, roles }: { name?: string | null; image?: string | null; roles: string[] }) {
+export function Topbar({ name, image, roles, permissions }: { name?: string | null; image?: string | null; roles: string[]; permissions: string[] }) {
   const [greeting, setGreeting] = useState("Bem-vindo");
   const displayName = name ?? "Usuario";
   const visibleRoles = roles.filter((role) => role.toLowerCase() !== "master");
@@ -25,7 +25,7 @@ export function Topbar({ name, image, roles }: { name?: string | null; image?: s
   return (
     <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-border/70 bg-card/85 px-4 shadow-[0_14px_34px_-30px_rgba(0,0,0,0.82)] backdrop-blur-xl md:px-8">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <MobileMenu />
+        <MobileMenu roles={roles} permissions={permissions} />
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">{greeting}</div>
           <div className="font-title truncate text-lg font-semibold tracking-tight text-foreground md:text-xl">{displayName}</div>
