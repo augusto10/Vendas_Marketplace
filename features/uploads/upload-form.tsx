@@ -62,23 +62,12 @@ export function UploadForm() {
       setProgress(100);
       setState("done");
       setMessage("Arquivo importado com sucesso.");
+      router.refresh();
     } catch (error) {
       setState("error");
       setProgress(0);
       setMessage(error instanceof Error ? error.message : "Falha ao importar arquivo.");
     }
-  }
-
-  function handleConfirm() {
-    setFile(null);
-    setState("idle");
-    setPhase("sending");
-    setProgress(0);
-    setMessage("");
-    setProcessingSeconds(0);
-    setProcessingStartedAt(null);
-    setCurrentStep("");
-    router.refresh();
   }
 
   function handleFilePicked(nextFile: File | null) {
@@ -175,9 +164,6 @@ export function UploadForm() {
                 {message}
               </div>
               <div className="text-xs text-muted-foreground">{file ? `Arquivo processado: ${file.name}` : null}</div>
-              <Button type="button" size="sm" onClick={handleConfirm}>
-                Confirmar
-              </Button>
             </div>
           ) : null}
         </div>
