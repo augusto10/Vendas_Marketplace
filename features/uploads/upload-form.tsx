@@ -8,17 +8,6 @@ import { cn } from "@/lib/utils";
 
 type UploadState = "idle" | "uploading" | "done" | "error";
 type UploadPhase = "sending" | "processing";
-type UploadStatusPayload = {
-  id: string;
-  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
-  rowsRead: number;
-  rowsTotal: number;
-  rowsImported: number;
-  rowsUpdated: number;
-  progress: number;
-  currentStep: string | null;
-  lastError: string | null;
-};
 
 export function UploadForm() {
   const router = useRouter();
@@ -62,33 +51,13 @@ export function UploadForm() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const uploadId = await startUpload(formData, setProgress, (nextPhase) => {
+      await uploadAndProcess(formData, setProgress, (nextPhase) => {
         setPhase(nextPhase);
         if (nextPhase === "processing") {
           setProcessingStartedAt((current) => current ?? Date.now());
           setProgress((current) => Math.max(current, 15));
         }
       });
-
-      const stopPolling = pollUploadStatus(uploadId, (status) => {
-        setProgress(status.progress);
-        setCurrentStep(status.currentStep ?? "");
-      });
-
-      try {
-        const response = await fetch(`/api/v1/uploads/${uploadId}/process`, { method: "POST" });
-        const result = await response.json();
-        if (!response.ok || !result.ok) {
-          throw new Error(result.error?.message ?? "Falha ao processar arquivo.");
-        }
-      } finally {
-        stopPolling();
-      }
-
-      const finalStatus = await getUploadStatus(uploadId);
-      if (finalStatus.status === "FAILED") {
-        throw new Error(finalStatus.lastError ?? finalStatus.currentStep ?? "A importacao falhou.");
-      }
 
       setProgress(100);
       setState("done");
@@ -230,7 +199,7 @@ function formatBytes(size: number) {
   return `${(size / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function startUpload(
+function uploadAndProcess(
   formData: FormData,
   onProgress: (progress: number) => void,
   onPhaseChange: (phase: UploadPhase) => void
@@ -254,12 +223,12 @@ function startUpload(
 
     request.onload = () => {
       try {
-        const result = JSON.parse(request.responseText);
+        const result = parseApiPayload(request.responseText);
         if (request.status < 200 || request.status >= 300 || !result.ok) {
           reject(new Error(result.error?.message ?? "Falha ao importar arquivo."));
           return;
         }
-        resolve(result.data.uploadId);
+        resolve(result.data?.uploadId ?? "");
       } catch {
         reject(new Error(request.status >= 500 ? "Falha no servidor ao importar arquivo." : "Resposta invalida ao importar arquivo."));
       }
@@ -267,34 +236,21 @@ function startUpload(
 
     request.onerror = () => reject(new Error("Falha de conexao ao importar arquivo."));
     request.ontimeout = () => reject(new Error("Tempo esgotado ao importar. Tente refazer o upload."));
-    request.open("POST", "/api/v1/uploads/start");
+    request.open("POST", "/api/v1/uploads");
     request.send(formData);
   });
 }
 
-function pollUploadStatus(uploadId: string, onStatus: (status: UploadStatusPayload) => void) {
-  let active = true;
-  const tick = async () => {
-    if (!active) return;
-    try {
-      onStatus(await getUploadStatus(uploadId));
-    } catch {
-      // A proxima consulta pode recuperar de uma falha momentanea de rede.
-    }
-  };
-  void tick();
-  const timer = window.setInterval(tick, 1200);
-  return () => {
-    active = false;
-    window.clearInterval(timer);
-  };
-}
-
-async function getUploadStatus(uploadId: string): Promise<UploadStatusPayload> {
-  const response = await fetch(`/api/v1/uploads/${uploadId}`, { cache: "no-store" });
-  const result = await response.json();
-  if (!response.ok || !result.ok) {
-    throw new Error(result.error?.message ?? "Falha ao consultar andamento.");
+function parseApiPayload(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const cleanText = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return {
+      ok: false,
+      error: {
+        message: cleanText || "O servidor retornou uma resposta invalida."
+      }
+    };
   }
-  return result.data;
 }

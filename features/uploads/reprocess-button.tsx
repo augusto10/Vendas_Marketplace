@@ -21,7 +21,7 @@ export function ReprocessButton({ uploadId }: { uploadId: string }) {
           setMessage(null);
           startTransition(async () => {
             const response = await fetch(`/api/v1/uploads/${uploadId}/reprocess`, { method: "POST" });
-            const payload = await response.json();
+            const payload = parseApiPayload(await response.text());
             setMessage(payload.ok ? "Reprocessado" : payload.error?.message ?? "Falha");
             if (payload.ok) router.refresh();
           });
@@ -33,4 +33,17 @@ export function ReprocessButton({ uploadId }: { uploadId: string }) {
       {message ? <span className="text-xs text-muted-foreground">{message}</span> : null}
     </div>
   );
+}
+
+function parseApiPayload(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      error: {
+        message: text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || "Resposta invalida do servidor."
+      }
+    };
+  }
 }
