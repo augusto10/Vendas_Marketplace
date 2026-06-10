@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { CancelUploadButton } from "@/features/uploads/cancel-upload-button";
 import { UploadForm } from "@/features/uploads/upload-form";
 import { cn } from "@/lib/utils";
 
@@ -92,6 +93,7 @@ export default async function UploadsPage() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Usuario</TableHead>
+                  <TableHead>Acao</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -99,6 +101,7 @@ export default async function UploadsPage() {
                   const slow = isSlowProcessing(upload, now);
                   const originalFileAvailable = hasOriginalFile(upload.storagePath);
                   const lastError = upload.importErrors[0]?.message;
+                  const cancelable = upload.status === "FAILED" || slow;
                   return (
                     <TableRow key={upload.id}>
                       <TableCell>{formatDateTime(upload.processedAt ?? upload.createdAt)}</TableCell>
@@ -137,6 +140,9 @@ export default async function UploadsPage() {
                         </div>
                       </TableCell>
                       <TableCell>{upload.uploadedBy?.name ?? "-"}</TableCell>
+                      <TableCell>
+                        {cancelable ? <CancelUploadButton uploadId={upload.id} /> : "-"}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
