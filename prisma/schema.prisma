@@ -200,7 +200,7 @@ model OrderItem {
 
 model SalesInvoice {
   id             String   @id @default(uuid()) @db.Uuid
-  documentNumber String
+  documentNumber String   @unique
   emissionDate   DateTime
   branch         String?
   type           String?
@@ -491,6 +491,7 @@ model AtacadoProduto {
   grade              String?
   quantidadePorCaixa Int                  @default(12)
   precoPorCaixa      Decimal              @db.Decimal(14, 2)
+  permiteEditarPrecoPedido Boolean        @default(false)
   status             AtacadoProdutoStatus @default(ATIVO)
   observacoes        String?
   createdAt          DateTime             @default(now())

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -171,7 +171,9 @@ function OrderModal({ order, onClose }: { order: OrderDetails; onClose: () => vo
               ["Resultado dos ajustes", <MoneyValue key="net" value={adjustmentNet} />],
               ["Restou apos ajustes", <span key="remaining" className="font-semibold">{currency(remainingAfterAdjustments)}</span>],
               ["Nota ERP", currency(order.invoiceTotal)],
-              ["Frete nota", currency(order.invoiceFreight)]
+              ["Frete nota", currency(order.invoiceFreight)],
+              ["Validado planilha ERP", <ValidationStatus key="erp-validation" valid={order.invoiceTotal > 0} />],
+              ["Validado planilha Shopee", <ValidationStatus key="shopee-validation" valid={order.shopeeGross > 0} />]
             ]}
           />
         </div>
@@ -319,6 +321,18 @@ function InfoGroup({ title, rows }: { title: string; rows: Array<[string, ReactN
 function MoneyValue({ value, emptyWhenZero = false }: { value: number; emptyWhenZero?: boolean }) {
   if (emptyWhenZero && value === 0) return <span className="text-muted-foreground">-</span>;
   return <span className={cn("font-semibold", moneyToneClass(value))}>{signedCurrency(value)}</span>;
+}
+
+function ValidationStatus({ valid }: { valid: boolean }) {
+  return (
+    <span className={cn(
+      "inline-flex items-center justify-end gap-1.5 font-semibold",
+      valid ? "text-emerald-600 dark:text-emerald-300" : "text-red-600 dark:text-red-300"
+    )}>
+      {valid ? <Check className="h-4 w-4" aria-hidden="true" /> : <X className="h-4 w-4" aria-hidden="true" />}
+      {valid ? "Sim" : "Nao"}
+    </span>
+  );
 }
 
 function getNetAdjustment(adjustments: OrderDetails["adjustments"]) {

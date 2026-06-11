@@ -1,20 +1,34 @@
 import { prisma } from "@/lib/prisma";
 import type { Period } from "@/lib/period";
 
-export async function getSalesReport(period: Period) {
-  return prisma.salesInvoice.findMany({
-    where: { emissionDate: { gte: period.start, lte: period.end } },
-    orderBy: { emissionDate: "desc" },
-    take: 1000
-  });
+type InvoiceRow = Awaited<ReturnType<typeof prisma.salesInvoice.findMany>>[number];
+
+function uniqueInvoicesByDocumentNumber<T extends InvoiceRow>(invoices: T[]) {
+  const unique = new Map<string, T>();
+  for (const invoice of invoices) {
+    const key = invoice.documentNumber.trim().toUpperCase();
+    const current = unique.get(key);
+    if (!current || invoice.createdAt < current.createdAt) unique.set(key, invoice);
+  }
+  return [...unique.values()];
 }
 
-export async function getUnifiedSalesReport(period: Period) {
+export async function getSalesReport(period: Period) {
   const invoices = await prisma.salesInvoice.findMany({
     where: { emissionDate: { gte: period.start, lte: period.end } },
     orderBy: { emissionDate: "desc" },
     take: 1000
   });
+  return uniqueInvoicesByDocumentNumber(invoices);
+}
+
+export async function getUnifiedSalesReport(period: Period) {
+  const invoicesRaw = await prisma.salesInvoice.findMany({
+    where: { emissionDate: { gte: period.start, lte: period.end } },
+    orderBy: { emissionDate: "desc" },
+    take: 1000
+  });
+  const invoices = uniqueInvoicesByDocumentNumber(invoicesRaw);
 
   const marketplaceIds = invoices.map((invoice) => invoice.customerOrder).filter((value): value is string => Boolean(value));
   const orders = marketplaceIds.length
@@ -85,7 +99,13 @@ function sumOrderIncomes(order?: SalesOrder) {
   const allIncomes = order?.incomes ?? [];
   const productRows = allIncomes.filter((income) => income.sku && income.sku !== "-");
   const summaryRows = allIncomes.filter((income) => !income.sku || income.sku === "-");
-  const incomes = productRows.length ? productRows : allIncomes;
+  const productMoney = productRows.reduce((sum, income) => (
+    sum +
+    Math.abs(Number(income.productPrice ?? 0)) +
+    Math.abs(Number(income.releasedAmount ?? 0)) +
+    Math.abs(Number(income.buyerPaidAmount ?? 0))
+  ), 0);
+  const incomes = productRows.length && productMoney > 0 ? productRows : summaryRows.length ? summaryRows : allIncomes;
   const productGross = incomes.reduce((sum, income) => sum + Number(income.productPrice ?? 0), 0);
   const summaryGross = summaryRows.reduce((sum, income) => sum + Number(income.productPrice ?? 0), 0);
   const grossLogisticsFreight = incomes.reduce((sum, income) => sum + Math.abs(Number(income.logisticsFreight ?? 0)), 0);
@@ -118,6 +138,37 @@ function sumOrderIncomes(order?: SalesOrder) {
   };
 }
 
+function scaleOrderIncome(income: ReturnType<typeof sumOrderIncomes>, factor: number) {
+  return {
+    ...income,
+    shopeeGross: income.shopeeGross * factor,
+    releasedAmount: income.releasedAmount * factor,
+    commission: income.commission * factor,
+    serviceFee: income.serviceFee * factor,
+    transactionFee: income.transactionFee * factor,
+    affiliateCommissionFee: income.affiliateCommissionFee * factor,
+    freight: income.freight * factor,
+    logisticsFreight: income.logisticsFreight * factor,
+    buyerShippingFee: income.buyerShippingFee * factor,
+    shopeeShippingDiscount: income.shopeeShippingDiscount * factor,
+    refunds: income.refunds * factor
+  };
+}
+
+function scaleOrderAdjustment(
+  adjustment: { total: number; difal: number; refunds: number; credits: number; descriptions: Set<string> } | undefined,
+  factor: number
+) {
+  if (!adjustment) return undefined;
+  return {
+    ...adjustment,
+    total: adjustment.total * factor,
+    difal: adjustment.difal * factor,
+    refunds: adjustment.refunds * factor,
+    credits: adjustment.credits * factor
+  };
+}
+
 function startOfLocalDay(date?: Date | null) {
   if (!date) return null;
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -143,7 +194,7 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
       include: { incomes: true, invoices: true }
     });
   const periodShopeeOrderIds = periodShopeeOrders.map((order) => order.marketplaceId);
-  const invoices = await prisma.salesInvoice.findMany({
+  const invoicesRaw = await prisma.salesInvoice.findMany({
     where: dateMode === "erp"
       ? { emissionDate: { gte: period.start, lte: period.end } }
       : periodShopeeOrderIds.length
@@ -151,6 +202,7 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
         : { id: "__none__" },
     orderBy: { emissionDate: "desc" }
   });
+  const invoices = uniqueInvoicesByDocumentNumber(invoicesRaw);
   const [walletAgg, walletAdjustments, acceleraAgg] = await Promise.all([
     prisma.walletTransaction.groupBy({
       where: { transactionDate: { gte: period.start, lte: period.end } },
@@ -195,6 +247,15 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
       (order.paidAt && order.paidAt >= period.start && order.paidAt <= period.end)
     ))
     : shopeeOrders;
+  const fiscalProductTotalByMarketplaceId = new Map<string, number>();
+  for (const invoice of invoices) {
+    if (!invoice.customerOrder) continue;
+    const fiscalProductTotal = Number(invoice.totalAmount) - Number(invoice.freightAmount);
+    fiscalProductTotalByMarketplaceId.set(
+      invoice.customerOrder,
+      (fiscalProductTotalByMarketplaceId.get(invoice.customerOrder) ?? 0) + fiscalProductTotal
+    );
+  }
   const adjustmentsByOrder = new Map<string, { total: number; difal: number; refunds: number; credits: number; descriptions: Set<string> }>();
   const adjustmentTotals = { total: 0, difal: 0, refunds: 0, credits: 0, other: 0 };
   for (const adjustment of walletAdjustments) {
@@ -224,8 +285,11 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
 
   const rows = invoices.map((invoice) => {
     const order = invoice.customerOrder ? ordersByMarketplaceId.get(invoice.customerOrder) : undefined;
-    const income = sumOrderIncomes(order);
-    const adjustment = adjustmentsByOrder.get(invoice.customerOrder ?? "");
+    const fiscalProductTotal = Number(invoice.totalAmount) - Number(invoice.freightAmount);
+    const allocationBase = invoice.customerOrder ? fiscalProductTotalByMarketplaceId.get(invoice.customerOrder) ?? 0 : 0;
+    const allocationFactor = allocationBase > 0 ? fiscalProductTotal / allocationBase : 1;
+    const income = scaleOrderIncome(sumOrderIncomes(order), allocationFactor);
+    const adjustment = scaleOrderAdjustment(adjustmentsByOrder.get(invoice.customerOrder ?? ""), allocationFactor);
     const daysFromShopeeOrderToInvoice = differenceInDays(invoice.emissionDate, order?.createdAtOrder);
     const daysFromInvoiceToPayment = differenceInDays(order?.paidAt, invoice.emissionDate);
     const paymentReferenceDate = order?.createdAtOrder ?? invoice.emissionDate;
@@ -241,7 +305,7 @@ export async function getSalesConciliationReport(period: Period, page = 1, pageS
       quantity: invoice.quantity,
       fiscalTotal: Number(invoice.totalAmount),
       fiscalFreight: Number(invoice.freightAmount),
-      fiscalProductTotal: Number(invoice.totalAmount) - Number(invoice.freightAmount),
+      fiscalProductTotal,
       shopeeGross: income.shopeeGross,
       releasedAmount: income.releasedAmount,
       commission: income.commission,
@@ -442,6 +506,38 @@ export async function getProductsReport(period: Period) {
   }
 
   return [...grouped.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 50);
+}
+
+export async function getProductsByStateReport(period: Period) {
+  const rows = await prisma.shopeeIncome.findMany({
+    where: {
+      orderCreatedAt: { gte: period.start, lte: period.end },
+      sku: { not: "-" },
+      productName: { not: "" }
+    },
+    select: {
+      order: {
+        select: {
+          state: true,
+          invoices: {
+            select: { state: true },
+            take: 1
+          }
+        }
+      }
+    },
+    take: 5000
+  });
+
+  const grouped = new Map<string, { uf: string; produtos: number }>();
+  for (const row of rows) {
+    const uf = row.order?.state || row.order?.invoices[0]?.state || "N/D";
+    const current = grouped.get(uf) ?? { uf, produtos: 0 };
+    current.produtos += 1;
+    grouped.set(uf, current);
+  }
+
+  return [...grouped.values()].sort((a, b) => b.produtos - a.produtos);
 }
 
 export async function getFeesReport(period: Period) {

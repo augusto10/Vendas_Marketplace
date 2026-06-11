@@ -3,16 +3,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listProdutos } from "@/lib/atacado/service";
 import { createProdutoAction } from "@/features/atacado/actions";
-import { AtacadoStatusBadge } from "@/features/atacado/status";
-import { currency } from "@/lib/utils";
+import { AtacadoProdutosTable, type AtacadoProdutoRow } from "./atacado-produtos-table";
 
 export const dynamic = "force-dynamic";
 
 export default async function AtacadoProdutosPage() {
   const produtos = await listProdutos();
+  const produtoRows: AtacadoProdutoRow[] = produtos.map((produto) => ({
+    id: produto.id,
+    referencia: produto.referencia,
+    nome: produto.nome,
+    categoria: produto.categoria,
+    cor: produto.cor,
+    grade: produto.grade,
+    quantidadePorCaixa: produto.quantidadePorCaixa,
+    precoPorCaixa: Number(produto.precoPorCaixa),
+    permiteEditarPrecoPedido: produto.permiteEditarPrecoPedido,
+    status: produto.status,
+    observacoes: produto.observacoes
+  }));
 
   return (
     <div className="space-y-6">
@@ -28,6 +39,10 @@ export default async function AtacadoProdutosPage() {
             <div className="space-y-2"><Label>Grade</Label><Input name="grade" /></div>
             <div className="space-y-2"><Label>Pares por caixa</Label><Input name="quantidadePorCaixa" type="number" defaultValue={12} /></div>
             <div className="space-y-2"><Label>Preco caixa</Label><Input name="precoPorCaixa" type="number" step="0.01" required /></div>
+            <label className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium md:col-span-2">
+              <input type="checkbox" name="permiteEditarPrecoPedido" className="h-4 w-4 accent-primary" />
+              Liberar preco/desconto no pedido sem senha
+            </label>
             <div className="space-y-2 md:col-span-2"><Label>Observacoes</Label><Input name="observacoes" /></div>
             <Button className="md:col-span-5 md:justify-self-end" type="submit">Cadastrar produto</Button>
           </form>
@@ -36,24 +51,9 @@ export default async function AtacadoProdutosPage() {
       <Card>
         <CardHeader className="border-b bg-muted/20"><CardTitle>Produtos cadastrados</CardTitle></CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader><TableRow><TableHead>Referencia</TableHead><TableHead>Produto</TableHead><TableHead>Categoria</TableHead><TableHead>Grade</TableHead><TableHead>Caixa</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {produtos.map((produto) => (
-                <TableRow key={produto.id}>
-                  <TableCell>{produto.referencia ?? "-"}</TableCell>
-                  <TableCell className="font-semibold">{produto.nome}</TableCell>
-                  <TableCell>{produto.categoria ?? "-"}</TableCell>
-                  <TableCell>{produto.grade ?? "-"}</TableCell>
-                  <TableCell>{produto.quantidadePorCaixa} pares - {currency(produto.precoPorCaixa.toString())}</TableCell>
-                  <TableCell><AtacadoStatusBadge status={produto.status} /></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <AtacadoProdutosTable produtos={produtoRows} />
         </CardContent>
       </Card>
     </div>
   );
 }
-

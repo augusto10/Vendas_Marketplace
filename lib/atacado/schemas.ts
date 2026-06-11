@@ -19,6 +19,7 @@ export const produtoSchema = z.object({
   grade: z.string().optional().nullable(),
   quantidadePorCaixa: z.coerce.number().int().positive().default(12),
   precoPorCaixa: z.coerce.number().nonnegative(),
+  permiteEditarPrecoPedido: z.coerce.boolean().default(false),
   status: z.enum(["ATIVO", "INATIVO"]).default("ATIVO"),
   observacoes: z.string().optional().nullable()
 });
@@ -26,6 +27,8 @@ export const produtoSchema = z.object({
 export const pedidoItemSchema = z.object({
   produtoId: z.string().uuid(),
   quantidadeCaixas: z.coerce.number().int().positive(),
+  precoCaixa: z.coerce.number().nonnegative().optional().nullable(),
+  descontoPercentual: z.coerce.number().min(0).max(100).default(0),
   observacao: z.string().optional().nullable()
 });
 

@@ -59,7 +59,8 @@ export function createProduto(data: ProdutoInput) {
   return prisma.atacadoProduto.create({
     data: {
       ...data,
-      precoPorCaixa: new Prisma.Decimal(data.precoPorCaixa)
+      precoPorCaixa: new Prisma.Decimal(data.precoPorCaixa),
+      permiteEditarPrecoPedido: data.permiteEditarPrecoPedido
     }
   });
 }
@@ -69,7 +70,8 @@ export function updateProduto(id: string, data: ProdutoInput) {
     where: { id },
     data: {
       ...data,
-      precoPorCaixa: new Prisma.Decimal(data.precoPorCaixa)
+      precoPorCaixa: new Prisma.Decimal(data.precoPorCaixa),
+      permiteEditarPrecoPedido: data.permiteEditarPrecoPedido
     }
   });
 }
@@ -89,12 +91,14 @@ export async function addProdutoFoto(id: string, file: File, principal = false) 
   });
 }
 
-export async function listPedidos(filters: { status?: AtacadoPedidoStatus; clienteId?: string; vendedorId?: string } = {}) {
+export async function listPedidos(filters: { status?: AtacadoPedidoStatus; clienteId?: string; vendedorId?: string; start?: Date; end?: Date; pedido?: string } = {}) {
   return prisma.atacadoPedido.findMany({
     where: {
       status: filters.status,
       clienteId: filters.clienteId,
-      vendedorId: filters.vendedorId
+      vendedorId: filters.vendedorId,
+      criadoEm: filters.start || filters.end ? { gte: filters.start, lte: filters.end } : undefined,
+      numero: filters.pedido ? { contains: filters.pedido, mode: "insensitive" } : undefined
     },
     include: {
       cliente: true,
@@ -129,7 +133,7 @@ export function getPedido(id: string) {
   });
 }
 
-export async function createPedido(data: PedidoInput, userId: string) {
+export async function createPedido(data: PedidoInput, userId: string, options: { priceOverrideAuthorized?: boolean } = {}) {
   const produtos = await prisma.atacadoProduto.findMany({
     where: { id: { in: data.itens.map((item) => item.produtoId) } }
   });
@@ -146,14 +150,24 @@ export async function createPedido(data: PedidoInput, userId: string) {
       const produto = produtosById.get(item.produtoId);
       if (!produto) throw new Error("Produto invalido no pedido.");
       const quantidadePares = item.quantidadeCaixas * produto.quantidadePorCaixa;
-      const valorTotal = produto.precoPorCaixa.mul(item.quantidadeCaixas);
+      const basePrecoCaixa = item.precoCaixa !== null && item.precoCaixa !== undefined
+        ? new Prisma.Decimal(item.precoCaixa)
+        : produto.precoPorCaixa;
+      const descontoPercentual = new Prisma.Decimal(item.descontoPercentual ?? 0);
+      const changedPrice = !basePrecoCaixa.equals(produto.precoPorCaixa);
+      const changedDiscount = descontoPercentual.gt(0);
+      if ((changedPrice || changedDiscount) && !produto.permiteEditarPrecoPedido && !options.priceOverrideAuthorized) {
+        throw new Error("Alteracao de preco ou desconto precisa de autorizacao de administrador.");
+      }
+      const precoCaixa = basePrecoCaixa.mul(new Prisma.Decimal(100).sub(descontoPercentual)).div(100);
+      const valorTotal = precoCaixa.mul(item.quantidadeCaixas);
       return {
         produtoId: item.produtoId,
         quantidadeCaixas: item.quantidadeCaixas,
         quantidadePares,
-        precoCaixa: produto.precoPorCaixa,
+        precoCaixa,
         valorTotal,
-        observacao: item.observacao
+        observacao: item.observacao ?? (descontoPercentual.gt(0) ? `Desconto ${descontoPercentual.toString()}% sobre ${basePrecoCaixa.toString()}` : null)
       };
     });
 
@@ -183,9 +197,12 @@ export async function createPedido(data: PedidoInput, userId: string) {
   });
 }
 
-export async function updatePedidoStatus(id: string, data: StatusPedidoInput, userId: string) {
+export async function updatePedidoStatus(id: string, data: StatusPedidoInput, userId: string, options: { isMaster?: boolean } = {}) {
   return prisma.$transaction(async (tx) => {
     const current = await tx.atacadoPedido.findUniqueOrThrow({ where: { id }, select: { status: true } });
+    if (["EM_ENTREGA", "ENTREGUE", "CANCELADO"].includes(current.status) && !options.isMaster) {
+      throw new Error("Somente Administrador Master pode alterar pedido em rota ou finalizado.");
+    }
     const pedido = await tx.atacadoPedido.update({ where: { id }, data: { status: data.status } });
     await tx.atacadoHistoricoStatus.create({
       data: {

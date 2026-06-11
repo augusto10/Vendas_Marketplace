@@ -6,10 +6,14 @@ import { Label } from "@/components/ui/label";
 import { parsePeriod } from "@/lib/period";
 import { prisma } from "@/lib/prisma";
 import { OrdersDetailsTable, type OrderDetails } from "./orders-details-table";
+import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
 type OrderStatusFilter = "all" | "adjustments" | "paid" | "unpaid";
+type OrderWithRelations = Prisma.OrderGetPayload<{ include: { items: true; invoices: true; incomes: true } }>;
+type OrderInvoice = OrderWithRelations["invoices"][number];
+type OrderIncome = OrderWithRelations["incomes"][number];
 
 export default async function PedidosPage({ searchParams }: { searchParams: Promise<{ start?: string; end?: string; pedido?: string; status?: string }> }) {
   const params = await searchParams;
@@ -118,15 +122,20 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
   }
   const rawDetails: OrderDetails[] = orders.map((order) => {
     const productRows = order.incomes.filter((income) => income.sku && income.sku !== "-");
-    const incomeRows = productRows.length ? productRows : order.incomes;
+    const incomeRows = incomeRowsForAmounts(order.incomes);
+    const uniqueInvoices = uniqueInvoicesByDocumentNumber(order.invoices);
+    const productGross = productRows.reduce((sum, income) => sum + Number(income.productPrice ?? 0), 0);
+    const summaryGross = order.incomes
+      .filter((income) => !income.sku || income.sku === "-")
+      .reduce((sum, income) => sum + Number(income.productPrice ?? 0), 0);
     const products = incomeRows
       .filter((income) => income.productName || income.sku)
       .map((income) => ({
         sku: income.sku || "-",
         name: income.productName || "-",
         quantity: 1,
-        unitPrice: Number(income.productPrice ?? 0),
-        total: Number(income.productPrice ?? 0)
+        unitPrice: productRows.length === 1 && productGross === 0 ? summaryGross : Number(income.productPrice ?? 0),
+        total: productRows.length === 1 && productGross === 0 ? summaryGross : Number(income.productPrice ?? 0)
       }));
     const shopeeGross = incomeRows.reduce((sum, income) => sum + Number(income.productPrice ?? 0), 0);
     const received = incomeRows.reduce((sum, income) => sum + Number(income.releasedAmount ?? 0), 0);
@@ -134,12 +143,12 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
     const serviceFee = incomeRows.reduce((sum, income) => sum + Math.abs(Number(income.serviceFee ?? 0)), 0);
     const transactionFee = incomeRows.reduce((sum, income) => sum + Math.abs(Number(income.transactionFee ?? 0)), 0);
     const affiliateFee = incomeRows.reduce((sum, income) => sum + Math.abs(Number(income.affiliateCommissionFee ?? 0)), 0);
-    const invoiceTotal = order.invoices.reduce((sum, invoice) => sum + Number(invoice.totalAmount ?? 0), 0);
-    const invoiceFreight = order.invoices.reduce((sum, invoice) => sum + Number(invoice.freightAmount ?? 0), 0);
-    const difal = order.invoices.reduce((sum, invoice) => sum + Number(invoice.estimatedDifal ?? 0), 0);
-    const unitsSold = order.invoices.reduce((sum, invoice) => sum + invoice.quantity, 0) || products.reduce((sum, product) => sum + product.quantity, 0);
+    const invoiceTotal = uniqueInvoices.reduce((sum, invoice) => sum + Number(invoice.totalAmount ?? 0), 0);
+    const invoiceFreight = uniqueInvoices.reduce((sum, invoice) => sum + Number(invoice.freightAmount ?? 0), 0);
+    const difal = uniqueInvoices.reduce((sum, invoice) => sum + Number(invoice.estimatedDifal ?? 0), 0);
+    const unitsSold = uniqueInvoices.reduce((sum, invoice) => sum + invoice.quantity, 0) || products.reduce((sum, product) => sum + product.quantity, 0);
     const orderAdjustments = adjustmentsByOrder.get(order.marketplaceId) ?? [];
-    const paymentReferenceDate = order.createdAtOrder ?? order.invoices[0]?.emissionDate ?? null;
+    const paymentReferenceDate = order.createdAtOrder ?? uniqueInvoices[0]?.emissionDate ?? null;
     const paymentOpenDays = order.paidAt ? null : differenceInDays(new Date(), paymentReferenceDate);
 
     return {
@@ -148,7 +157,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
       createdAtOrder: order.createdAtOrder?.toISOString() ?? null,
       paidAt: order.paidAt?.toISOString() ?? null,
       carrier: order.carrier || "-",
-      state: order.state || order.invoices[0]?.state || "-",
+      state: order.state || uniqueInvoices[0]?.state || "-",
       customerName: order.buyerUsername,
       status: order.paidAt ? "Pago" as const : "Pendente" as const,
       paymentOpenDays,
@@ -171,7 +180,7 @@ export default async function PedidosPage({ searchParams }: { searchParams: Prom
         reason: adjustment.reason || "-",
         amount: Number(adjustment.amount)
       })),
-      invoices: order.invoices.map((invoice) => ({
+      invoices: uniqueInvoices.map((invoice) => ({
         documentNumber: invoice.documentNumber,
         emissionDate: invoice.emissionDate.toISOString(),
         total: Number(invoice.totalAmount ?? 0),
@@ -244,6 +253,28 @@ type AdjustmentAlert = {
 function mergeAdjustments(adjustments: AdjustmentAlert[]) {
   return [...new Map(adjustments.map((adjustment) => [adjustmentKey(adjustment), adjustment])).values()]
     .sort((left, right) => (right.occurredAt?.getTime() ?? 0) - (left.occurredAt?.getTime() ?? 0));
+}
+
+function uniqueInvoicesByDocumentNumber(invoices: OrderInvoice[]) {
+  const unique = new Map<string, OrderInvoice>();
+  for (const invoice of invoices) {
+    const key = invoice.documentNumber.trim().toUpperCase();
+    const current = unique.get(key);
+    if (!current || invoice.createdAt < current.createdAt) unique.set(key, invoice);
+  }
+  return [...unique.values()];
+}
+
+function incomeRowsForAmounts(incomes: OrderIncome[]) {
+  const productRows = incomes.filter((income) => income.sku && income.sku !== "-");
+  const summaryRows = incomes.filter((income) => !income.sku || income.sku === "-");
+  const productMoney = productRows.reduce((sum, income) => (
+    sum +
+    Math.abs(Number(income.productPrice ?? 0)) +
+    Math.abs(Number(income.releasedAmount ?? 0)) +
+    Math.abs(Number(income.buyerPaidAmount ?? 0))
+  ), 0);
+  return productRows.length && productMoney > 0 ? productRows : summaryRows.length ? summaryRows : incomes;
 }
 
 function getOrderTime(order: Pick<OrderDetails, "createdAtOrder" | "paidAt">) {

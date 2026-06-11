@@ -1,9 +1,11 @@
 "use server";
 
+import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/atacado/permissions";
+import { prisma } from "@/lib/prisma";
 import { clienteSchema, entregaSchema, pagamentoSchema, pedidoSchema, produtoSchema, statusPedidoSchema } from "@/lib/atacado/schemas";
-import { createCliente, createEntrega, createPedido, createProduto, registerPagamento, updatePedidoStatus } from "@/lib/atacado/service";
+import { createCliente, createEntrega, createPedido, createProduto, registerPagamento, updatePedidoStatus, updateProduto } from "@/lib/atacado/service";
 
 function formString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -40,11 +42,36 @@ export async function createProdutoAction(formData: FormData) {
     grade: formString(formData, "grade"),
     quantidadePorCaixa: formString(formData, "quantidadePorCaixa") ?? "12",
     precoPorCaixa: formString(formData, "precoPorCaixa") ?? "0",
+    permiteEditarPrecoPedido: formData.get("permiteEditarPrecoPedido") === "on",
     status: formString(formData, "status") ?? "ATIVO",
     observacoes: formString(formData, "observacoes")
   });
   await createProduto(data);
   revalidatePath("/atacado/produtos");
+}
+
+export async function updateProdutoAction(formData: FormData) {
+  const access = await requirePermission("atacado.produtos.manage");
+  if (access.error) return;
+
+  const produtoId = formString(formData, "produtoId");
+  if (!produtoId) return;
+
+  const data = produtoSchema.parse({
+    referencia: formString(formData, "referencia"),
+    nome: formString(formData, "nome"),
+    categoria: formString(formData, "categoria"),
+    cor: formString(formData, "cor"),
+    grade: formString(formData, "grade"),
+    quantidadePorCaixa: formString(formData, "quantidadePorCaixa") ?? "12",
+    precoPorCaixa: formString(formData, "precoPorCaixa") ?? "0",
+    permiteEditarPrecoPedido: formData.get("permiteEditarPrecoPedido") === "on",
+    status: formString(formData, "status") ?? "ATIVO",
+    observacoes: formString(formData, "observacoes")
+  });
+  await updateProduto(produtoId, data);
+  revalidatePath("/atacado/produtos");
+  revalidatePath("/atacado/pedidos");
 }
 
 export async function createPedidoAction(formData: FormData) {
@@ -58,11 +85,17 @@ export async function createPedidoAction(formData: FormData) {
     itens: [
       {
         produtoId: formString(formData, "produtoId"),
-        quantidadeCaixas: formString(formData, "quantidadeCaixas") ?? "1"
+        quantidadeCaixas: formString(formData, "quantidadeCaixas") ?? "1",
+        precoCaixa: formString(formData, "precoCaixa"),
+        descontoPercentual: formString(formData, "descontoPercentual") ?? "0"
       }
     ]
   });
-  await createPedido(data, access.user.id);
+  const priceOverrideAuthorized = await verifyAdminPriceOverride(
+    formString(formData, "adminEmail"),
+    formString(formData, "adminPassword")
+  );
+  await createPedido(data, access.user.id, { priceOverrideAuthorized });
   revalidatePath("/atacado");
   revalidatePath("/atacado/pedidos");
 }
@@ -77,7 +110,7 @@ export async function updatePedidoStatusAction(formData: FormData) {
     status: formString(formData, "status"),
     observacao: formString(formData, "observacao")
   });
-  await updatePedidoStatus(pedidoId, data, access.user.id);
+  await updatePedidoStatus(pedidoId, data, access.user.id, { isMaster: access.user.roles.includes("master") });
   revalidatePath("/atacado");
   revalidatePath("/atacado/pedidos");
   revalidatePath("/atacado/separacao");
@@ -116,8 +149,33 @@ export async function createEntregaAction(formData: FormData) {
     observacao: formString(formData, "observacao")
   });
   await createEntrega(pedidoId, data, access.user.id);
-  await updatePedidoStatus(pedidoId, { status: "EM_EXPEDICAO", observacao: "Entrega criada" }, access.user.id);
+  await updatePedidoStatus(pedidoId, { status: "EM_EXPEDICAO", observacao: "Entrega criada" }, access.user.id, { isMaster: access.user.roles.includes("master") });
   revalidatePath("/atacado");
   revalidatePath("/atacado/entregas");
 }
 
+async function verifyAdminPriceOverride(email?: string, password?: string) {
+  if (!email || !password) return false;
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: {
+      roles: {
+        include: {
+          role: {
+            include: { permissions: { include: { permission: true } } }
+          }
+        }
+      }
+    }
+  });
+  if (!user || user.status !== "ACTIVE" || !user.passwordHash) return false;
+
+  const hasAdminAccess = user.roles.some((entry) => (
+    ["master", "admin", "admin_atacado"].includes(entry.role.slug) ||
+    entry.role.permissions.some((permission) => permission.permission.key === "atacado.produtos.manage")
+  ));
+  if (!hasAdminAccess) return false;
+
+  return bcrypt.compare(password, user.passwordHash);
+}

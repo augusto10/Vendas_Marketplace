@@ -1,18 +1,85 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PeriodFilter } from "@/components/period-filter";
 import { listClientes, listPedidos, listProdutos } from "@/lib/atacado/service";
-import { createPedidoAction, updatePedidoStatusAction } from "@/features/atacado/actions";
-import { AtacadoStatusBadge } from "@/features/atacado/status";
-import { currency } from "@/lib/utils";
+import { parsePeriod } from "@/lib/period";
+import { auth } from "@/lib/auth/auth";
+import { hasPermission } from "@/lib/auth/permissions";
+import { NewPedidoForm } from "./new-pedido-form";
+import { AtacadoPedidosTable, type AtacadoPedidoRow } from "./atacado-pedidos-table";
 
 export const dynamic = "force-dynamic";
 
-export default async function AtacadoPedidosPage() {
-  const [clientes, produtos, pedidos] = await Promise.all([listClientes(), listProdutos(), listPedidos()]);
+export default async function AtacadoPedidosPage({ searchParams }: { searchParams: Promise<{ start?: string; end?: string; pedido?: string }> }) {
+  const params = await searchParams;
+  const period = parsePeriod(params);
+  const pedidoFilter = params.pedido?.trim() ?? "";
+  const [session, clientes, produtos, pedidos] = await Promise.all([
+    auth(),
+    listClientes(),
+    listProdutos(),
+    listPedidos({ start: period.start, end: period.end, pedido: pedidoFilter || undefined })
+  ]);
+  const user = session?.user ?? null;
+  const isMaster = user?.roles.includes("master") ?? false;
+  const canUpdatePedidos = hasPermission(user, "atacado.pedidos.update");
+  const clienteOptions = clientes.map((cliente) => ({ id: cliente.id, nome: cliente.nome }));
+  const produtoOptions = produtos.map((produto) => ({
+    id: produto.id,
+    nome: produto.nome,
+    precoPorCaixa: Number(produto.precoPorCaixa),
+    quantidadePorCaixa: produto.quantidadePorCaixa,
+    cor: produto.cor,
+    grade: produto.grade,
+    permiteEditarPrecoPedido: produto.permiteEditarPrecoPedido
+  }));
+  const pedidoRows: AtacadoPedidoRow[] = pedidos.map((pedido) => ({
+    id: pedido.id,
+    numero: pedido.numero,
+    criadoEm: pedido.criadoEm.toISOString(),
+    atualizadoEm: pedido.atualizadoEm.toISOString(),
+    observacao: pedido.observacao,
+    valorTotal: Number(pedido.valorTotal),
+    status: pedido.status,
+    cliente: {
+      nome: pedido.cliente.nome,
+      telefone: pedido.cliente.telefone,
+      cidade: pedido.cliente.cidade,
+      estado: pedido.cliente.estado,
+      endereco: pedido.cliente.endereco
+    },
+    vendedor: pedido.vendedor ? { name: pedido.vendedor.name, email: pedido.vendedor.email } : null,
+    itens: pedido.itens.map((item) => ({
+      id: item.id,
+      quantidadeCaixas: item.quantidadeCaixas,
+      quantidadePares: item.quantidadePares,
+      precoCaixa: Number(item.precoCaixa),
+      valorTotal: Number(item.valorTotal),
+      observacao: item.observacao,
+      produto: {
+        nome: item.produto.nome,
+        referencia: item.produto.referencia,
+        categoria: item.produto.categoria,
+        grade: item.produto.grade,
+        quantidadePorCaixa: item.produto.quantidadePorCaixa
+      }
+    })),
+    pagamentos: pedido.pagamentos.map((pagamento) => ({
+      status: pagamento.status,
+      valorPago: Number(pagamento.valorPago),
+      observacao: pagamento.observacao,
+      registradoEm: pagamento.registradoEm.toISOString()
+    })),
+    entregas: pedido.entregas.map((entrega) => ({
+      tipo: entrega.tipo,
+      status: entrega.status,
+      endereco: entrega.endereco,
+      observacao: entrega.observacao,
+      createdAt: entrega.createdAt.toISOString()
+    }))
+  }));
 
   return (
     <div className="space-y-6">
@@ -20,70 +87,21 @@ export default async function AtacadoPedidosPage() {
       <Card>
         <CardHeader className="border-b bg-muted/20"><CardTitle>Novo pedido</CardTitle></CardHeader>
         <CardContent>
-          <form action={createPedidoAction} className="grid gap-4 md:grid-cols-5">
-            <div className="space-y-2 md:col-span-2">
-              <Label>Cliente</Label>
-              <select name="clienteId" className="form-select" required>
-                <option value="">Selecione</option>
-                {clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Produto</Label>
-              <select name="produtoId" className="form-select" required>
-                <option value="">Selecione</option>
-                {produtos.map((produto) => <option key={produto.id} value={produto.id}>{produto.nome} - {currency(produto.precoPorCaixa.toString())}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>Caixas</Label>
-              <Input name="quantidadeCaixas" type="number" min={1} defaultValue={1} required />
-            </div>
-            <div className="space-y-2 md:col-span-5">
-              <Label>Observacao</Label>
-              <Input name="observacao" />
-            </div>
-            <Button className="md:col-span-5 md:justify-self-end" type="submit">Gerar pedido</Button>
-          </form>
+          <NewPedidoForm clientes={clienteOptions} produtos={produtoOptions} />
         </CardContent>
       </Card>
+      <PeriodFilter period={period}>
+        <div className="space-y-1.5">
+          <Label htmlFor="pedido">Pedido</Label>
+          <Input id="pedido" name="pedido" defaultValue={pedidoFilter} placeholder="Numero do pedido" />
+        </div>
+      </PeriodFilter>
       <Card>
         <CardHeader className="border-b bg-muted/20"><CardTitle>Pedidos</CardTitle></CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader><TableRow><TableHead>Numero</TableHead><TableHead>Cliente</TableHead><TableHead>Status</TableHead><TableHead>Itens</TableHead><TableHead>Total</TableHead><TableHead>Acao</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {pedidos.map((pedido) => (
-                <TableRow key={pedido.id}>
-                  <TableCell className="font-semibold">{pedido.numero}</TableCell>
-                  <TableCell>{pedido.cliente.nome}</TableCell>
-                  <TableCell><AtacadoStatusBadge status={pedido.status} /></TableCell>
-                  <TableCell>{pedido.itens.length}</TableCell>
-                  <TableCell>{currency(pedido.valorTotal.toString())}</TableCell>
-                  <TableCell>
-                    <form action={updatePedidoStatusAction} className="flex items-center gap-2">
-                      <input type="hidden" name="pedidoId" value={pedido.id} />
-                      <select name="status" className="form-select min-w-48" defaultValue={pedido.status}>
-                        <option value="AGUARDANDO_SEPARACAO">Aguardando separacao</option>
-                        <option value="EM_SEPARACAO">Em separacao</option>
-                        <option value="SEPARADO">Separado</option>
-                        <option value="AGUARDANDO_PAGAMENTO">Aguardando pagamento</option>
-                        <option value="PAGO">Pago</option>
-                        <option value="EM_EXPEDICAO">Em expedicao</option>
-                        <option value="EM_ENTREGA">Em entrega</option>
-                        <option value="ENTREGUE">Entregue</option>
-                        <option value="CANCELADO">Cancelado</option>
-                      </select>
-                      <Button type="submit" variant="outline">Salvar</Button>
-                    </form>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <AtacadoPedidosTable pedidos={pedidoRows} canUpdatePedidos={canUpdatePedidos} isMaster={isMaster} />
         </CardContent>
       </Card>
     </div>
   );
 }
-

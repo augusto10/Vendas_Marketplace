@@ -1,6 +1,7 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { cn } from "@/lib/utils";
 
 type TopProductSales = {
   productName: string;
@@ -33,7 +34,7 @@ function ProductNameTick({ x = 0, y = 0, payload }: ProductNameTickProps) {
   );
 }
 
-export function TopProductsSalesChart({ data }: { data: TopProductSales[] }) {
+export function TopProductsSalesChart({ data, className }: { data: TopProductSales[]; className?: string }) {
   const chartData = data.map((product) => ({
     name: product.productName,
     sku: product.sku,
@@ -41,17 +42,18 @@ export function TopProductsSalesChart({ data }: { data: TopProductSales[] }) {
   }));
 
   return (
-    <div className="h-80 w-full">
+    <div className={cn("h-80 w-full", className)}>
       <ResponsiveContainer>
-        <BarChart data={chartData} margin={{ top: 8, right: 24, bottom: 24, left: 8 }}>
+        <BarChart data={chartData} margin={{ top: 12, right: 24, bottom: 64, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="name" tickLine={false} axisLine={false} interval={0} height={70} tick={<ProductNameTick />} />
+          <XAxis dataKey="name" tickLine={false} axisLine={false} interval={0} height={88} tick={<ProductNameTick />} />
           <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={48} />
           <Tooltip
             formatter={(value) => [`${Number(value).toLocaleString("pt-BR")} vendas`, "Vendas"]}
             labelFormatter={(value) => String(value)}
           />
-          <Bar dataKey="vendas" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+          <Legend iconType="circle" verticalAlign="bottom" height={28} />
+          <Bar dataKey="vendas" name="Unidades vendidas" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
