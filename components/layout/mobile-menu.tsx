@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { ChevronDown, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { sidebarItems, type SidebarItem } from "@/components/layout/sidebar-items";
+import { hasPermission } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
 export function MobileMenu({ roles, permissions }: { roles: string[]; permissions: string[] }) {
@@ -14,7 +15,7 @@ export function MobileMenu({ roles, permissions }: { roles: string[]; permission
   const pathname = usePathname();
 
   function canView(item: SidebarItem) {
-    return roles.includes("master") || permissions.includes(item.permission) || (roles.includes("admin") && item.permission.endsWith(".view"));
+    return hasPermission({ roles, permissions }, item.permission);
   }
 
   function visibleChildren(item: SidebarItem) {

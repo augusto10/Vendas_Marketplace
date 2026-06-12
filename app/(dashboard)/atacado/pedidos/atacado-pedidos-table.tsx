@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { updatePedidoStatusAction } from "@/features/atacado/actions";
 import { AtacadoStatusBadge, statusLabel } from "@/features/atacado/status";
 import { currency } from "@/lib/utils";
+import { Package } from "lucide-react";
 
 export type AtacadoPedidoRow = {
   id: string;
@@ -102,6 +104,14 @@ export function AtacadoPedidosTable({ pedidos, canUpdatePedidos, isMaster }: { p
                     <Button type="button" variant="outline" disabled={!canEdit} onClick={() => setEditing(pedido)}>
                       Editar
                     </Button>
+                    {pedido.status !== "CANCELADO" && pedido.status !== "ENTREGUE" && (
+                      <Link href={`/atacado/pedidos/${pedido.id}/separacao`}>
+                        <Button type="button" variant="secondary" size="sm" className="flex items-center gap-2">
+                          <Package className="h-4 w-4" />
+                          Separação
+                        </Button>
+                      </Link>
+                    )}
                     {!canOpen ? (
                       <span className="text-xs text-muted-foreground">Somente Master</span>
                     ) : null}

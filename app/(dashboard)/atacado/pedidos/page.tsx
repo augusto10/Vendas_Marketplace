@@ -24,11 +24,14 @@ export default async function AtacadoPedidosPage({ searchParams }: { searchParam
   ]);
   const user = session?.user ?? null;
   const isMaster = user?.roles.includes("master") ?? false;
+  const canCreatePedidos = hasPermission(user, "atacado.pedidos.create");
   const canUpdatePedidos = hasPermission(user, "atacado.pedidos.update");
   const clienteOptions = clientes.map((cliente) => ({ id: cliente.id, nome: cliente.nome }));
   const produtoOptions = produtos.map((produto) => ({
     id: produto.id,
     nome: produto.nome,
+    codigo: produto.codigo,
+    referencia: produto.referencia,
     precoPorCaixa: Number(produto.precoPorCaixa),
     quantidadePorCaixa: produto.quantidadePorCaixa,
     cor: produto.cor,
@@ -84,12 +87,14 @@ export default async function AtacadoPedidosPage({ searchParams }: { searchParam
   return (
     <div className="space-y-6">
       <PageHeader title="Pedidos Atacado" description="Crie pedidos e acompanhe o andamento operacional." />
-      <Card>
-        <CardHeader className="border-b bg-muted/20"><CardTitle>Novo pedido</CardTitle></CardHeader>
-        <CardContent>
-          <NewPedidoForm clientes={clienteOptions} produtos={produtoOptions} />
-        </CardContent>
-      </Card>
+      {canCreatePedidos ? (
+        <Card>
+          <CardHeader className="border-b bg-muted/20"><CardTitle>Novo pedido</CardTitle></CardHeader>
+          <CardContent>
+            <NewPedidoForm clientes={clienteOptions} produtos={produtoOptions} />
+          </CardContent>
+        </Card>
+      ) : null}
       <PeriodFilter period={period}>
         <div className="space-y-1.5">
           <Label htmlFor="pedido">Pedido</Label>

@@ -5,11 +5,16 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/atacado/permissions";
 import { prisma } from "@/lib/prisma";
 import { clienteSchema, entregaSchema, pagamentoSchema, pedidoSchema, produtoSchema, statusPedidoSchema } from "@/lib/atacado/schemas";
-import { createCliente, createEntrega, createPedido, createProduto, registerPagamento, updatePedidoStatus, updateProduto } from "@/lib/atacado/service";
+import { addProdutoFoto, createCliente, createEntrega, createPedido, createProduto, registerPagamento, updatePedidoStatus, updateProduto } from "@/lib/atacado/service";
 
 function formString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function formFile(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return value instanceof File && value.size > 0 ? value : undefined;
 }
 
 export async function createClienteAction(formData: FormData) {
@@ -36,6 +41,8 @@ export async function createProdutoAction(formData: FormData) {
 
   const data = produtoSchema.parse({
     referencia: formString(formData, "referencia"),
+    codigo: formString(formData, "codigo"),
+    codigoBarras: formString(formData, "codigoBarras"),
     nome: formString(formData, "nome"),
     categoria: formString(formData, "categoria"),
     cor: formString(formData, "cor"),
@@ -46,7 +53,9 @@ export async function createProdutoAction(formData: FormData) {
     status: formString(formData, "status") ?? "ATIVO",
     observacoes: formString(formData, "observacoes")
   });
-  await createProduto(data);
+  const produto = await createProduto(data);
+  const foto = formFile(formData, "foto");
+  if (foto) await addProdutoFoto(produto.id, foto, true);
   revalidatePath("/atacado/produtos");
 }
 
@@ -59,6 +68,8 @@ export async function updateProdutoAction(formData: FormData) {
 
   const data = produtoSchema.parse({
     referencia: formString(formData, "referencia"),
+    codigo: formString(formData, "codigo"),
+    codigoBarras: formString(formData, "codigoBarras"),
     nome: formString(formData, "nome"),
     categoria: formString(formData, "categoria"),
     cor: formString(formData, "cor"),
@@ -70,6 +81,8 @@ export async function updateProdutoAction(formData: FormData) {
     observacoes: formString(formData, "observacoes")
   });
   await updateProduto(produtoId, data);
+  const foto = formFile(formData, "foto");
+  if (foto) await addProdutoFoto(produtoId, foto, true);
   revalidatePath("/atacado/produtos");
   revalidatePath("/atacado/pedidos");
 }
@@ -78,18 +91,45 @@ export async function createPedidoAction(formData: FormData) {
   const access = await requirePermission("atacado.pedidos.create");
   if (access.error || !access.user) return;
 
-  const data = pedidoSchema.parse({
-    clienteId: formString(formData, "clienteId"),
-    produtoId: formString(formData, "produtoId"),
-    observacao: formString(formData, "observacao"),
-    itens: [
+  const itemsJsonStr = formString(formData, "itemsJson");
+  let itens: Array<{
+    produtoId: string;
+    quantidadeCaixas: string;
+    precoCaixa: string;
+    descontoPercentual: string;
+  }> = [];
+
+  if (itemsJsonStr) {
+    // Nova interface com múltiplos itens
+    try {
+      const itemsData = JSON.parse(itemsJsonStr);
+      itens = itemsData.map((item: any) => ({
+        produtoId: item.produtoId,
+        quantidadeCaixas: String(item.quantidadeCaixas),
+        precoCaixa: String(item.precoCaixa),
+        descontoPercentual: String(item.descontoPercentual)
+      }));
+    } catch (error) {
+      console.error("Erro ao parsear itemsJson:", error);
+      return;
+    }
+  } else {
+    // Interface legada com um único item
+    itens = [
       {
-        produtoId: formString(formData, "produtoId"),
+        produtoId: formString(formData, "produtoId") ?? "",
         quantidadeCaixas: formString(formData, "quantidadeCaixas") ?? "1",
-        precoCaixa: formString(formData, "precoCaixa"),
+        precoCaixa: formString(formData, "precoCaixa") ?? "0",
         descontoPercentual: formString(formData, "descontoPercentual") ?? "0"
       }
-    ]
+    ];
+  }
+
+  const data = pedidoSchema.parse({
+    clienteId: formString(formData, "clienteId"),
+    produtoId: itens[0]?.produtoId,
+    observacao: formString(formData, "observacao"),
+    itens
   });
   const priceOverrideAuthorized = await verifyAdminPriceOverride(
     formString(formData, "adminEmail"),
@@ -101,16 +141,22 @@ export async function createPedidoAction(formData: FormData) {
 }
 
 export async function updatePedidoStatusAction(formData: FormData) {
-  const access = await requirePermission("atacado.pedidos.update");
-  if (access.error || !access.user) return;
-
   const pedidoId = formString(formData, "pedidoId");
   if (!pedidoId) return;
   const data = statusPedidoSchema.parse({
     status: formString(formData, "status"),
     observacao: formString(formData, "observacao")
   });
-  await updatePedidoStatus(pedidoId, data, access.user.id, { isMaster: access.user.roles.includes("master") });
+  const permission = ["EM_SEPARACAO", "SEPARADO", "FALTA_ESTOQUE"].includes(data.status)
+    ? "atacado.separacao.update"
+    : data.status === "AGUARDANDO_PAGAMENTO"
+      ? "atacado.financeiro.update"
+      : "atacado.pedidos.update";
+  const access = await requirePermission(permission);
+  if (access.error || !access.user) return;
+
+  const isAdmin = access.user.roles.some((role) => ["master", "admin", "admin_atacado"].includes(role));
+  await updatePedidoStatus(pedidoId, data, access.user.id, { isMaster: isAdmin });
   revalidatePath("/atacado");
   revalidatePath("/atacado/pedidos");
   revalidatePath("/atacado/separacao");
@@ -137,7 +183,7 @@ export async function registerPagamentoAction(formData: FormData) {
 }
 
 export async function createEntregaAction(formData: FormData) {
-  const access = await requirePermission("atacado.entregas.update");
+  const access = await requirePermission("atacado.separacao.update");
   if (access.error || !access.user) return;
 
   const pedidoId = formString(formData, "pedidoId");
@@ -149,7 +195,8 @@ export async function createEntregaAction(formData: FormData) {
     observacao: formString(formData, "observacao")
   });
   await createEntrega(pedidoId, data, access.user.id);
-  await updatePedidoStatus(pedidoId, { status: "EM_EXPEDICAO", observacao: "Entrega criada" }, access.user.id, { isMaster: access.user.roles.includes("master") });
+  const isAdmin = access.user.roles.some((role) => ["master", "admin", "admin_atacado"].includes(role));
+  await updatePedidoStatus(pedidoId, { status: "EM_EXPEDICAO", observacao: "Entrega criada" }, access.user.id, { isMaster: isAdmin });
   revalidatePath("/atacado");
   revalidatePath("/atacado/entregas");
 }

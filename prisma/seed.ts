@@ -56,41 +56,30 @@ const permissions = [
 
 const rolePermissions: Record<string, string[]> = {
   master: permissions,
-  admin: permissions.filter((key) => ![
-    "system.settings",
-    "system.api_settings",
-    "system.maintenance",
-    "users.delete"
-  ].includes(key)),
+  admin: permissions,
   financeiro: ["dashboard.view", "finance.view", "finance.export", "fees.view"],
   fiscal: ["dashboard.view", "fiscal.view", "fiscal.export"],
   operador: ["uploads.view", "uploads.create"],
   visualizador: ["dashboard.view", "finance.view", "fiscal.view", "fees.view", "reports.view"],
   admin_atacado: permissions.filter((key) => key.startsWith("atacado.")),
   vendas_atacado: [
-    "atacado.dashboard.view",
-    "atacado.clientes.view",
-    "atacado.clientes.manage",
     "atacado.produtos.view",
     "atacado.pedidos.view",
-    "atacado.pedidos.create",
-    "atacado.pedidos.update"
+    "atacado.pedidos.create"
   ],
   separacao_atacado: [
-    "atacado.dashboard.view",
-    "atacado.produtos.view",
     "atacado.pedidos.view",
     "atacado.separacao.view",
-    "atacado.separacao.update"
+    "atacado.separacao.update",
+    "atacado.entregas.view",
+    "atacado.entregas.update"
   ],
   financeiro_atacado: [
-    "atacado.dashboard.view",
     "atacado.pedidos.view",
     "atacado.financeiro.view",
     "atacado.financeiro.update"
   ],
   motorista_atacado: [
-    "atacado.pedidos.view",
     "atacado.entregas.view",
     "atacado.entregas.update"
   ]
@@ -120,6 +109,13 @@ async function main() {
     const rolePermissionIds = await prisma.permission.findMany({
       where: { key: { in: keys } },
       select: { id: true }
+    });
+
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId: role.id,
+        permissionId: { notIn: rolePermissionIds.map((permission) => permission.id) }
+      }
     });
 
     for (const permission of rolePermissionIds) {

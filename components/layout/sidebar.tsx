@@ -6,11 +6,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BadgeCheck, ChevronDown } from "lucide-react";
 import { sidebarItems, type SidebarItem } from "@/components/layout/sidebar-items";
+import { hasPermission } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
 export function Sidebar({ user }: { user: { name?: string | null; roles: string[]; permissions: string[] } }) {
   function canView(item: SidebarItem) {
-    return user.roles.includes("master") || user.permissions.includes(item.permission) || (user.roles.includes("admin") && item.permission.endsWith(".view"));
+    return hasPermission(user, item.permission);
   }
 
   function visibleChildren(item: SidebarItem) {

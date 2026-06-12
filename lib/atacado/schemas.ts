@@ -13,6 +13,8 @@ export const clienteSchema = z.object({
 
 export const produtoSchema = z.object({
   referencia: z.string().optional().nullable(),
+  codigo: z.string().optional().nullable(),
+  codigoBarras: z.string().optional().nullable(),
   nome: z.string().min(2),
   categoria: z.string().optional().nullable(),
   cor: z.string().optional().nullable(),
@@ -72,7 +74,6 @@ export const entregaSchema = z.object({
 export const concluirEntregaSchema = z.object({
   latitude: z.coerce.number().optional().nullable(),
   longitude: z.coerce.number().optional().nullable(),
-  recebedorNome: z.string().optional().nullable(),
-  assinaturaNome: z.string().optional().nullable(),
+  recebedorNome: z.string().trim().min(2, "Informe o nome de quem recebeu."),
   observacao: z.string().optional().nullable()
 });

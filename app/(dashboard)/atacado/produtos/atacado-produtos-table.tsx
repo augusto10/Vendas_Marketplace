@@ -12,6 +12,8 @@ import { currency } from "@/lib/utils";
 export type AtacadoProdutoRow = {
   id: string;
   referencia: string | null;
+  codigo: string | null;
+  codigoBarras: string | null;
   nome: string;
   categoria: string | null;
   cor: string | null;
@@ -21,9 +23,10 @@ export type AtacadoProdutoRow = {
   permiteEditarPrecoPedido: boolean;
   status: string;
   observacoes: string | null;
+  fotoUrl: string | null;
 };
 
-export function AtacadoProdutosTable({ produtos }: { produtos: AtacadoProdutoRow[] }) {
+export function AtacadoProdutosTable({ produtos, canManage }: { produtos: AtacadoProdutoRow[]; canManage: boolean }) {
   const [editing, setEditing] = useState<AtacadoProdutoRow | null>(null);
 
   return (
@@ -31,7 +34,10 @@ export function AtacadoProdutosTable({ produtos }: { produtos: AtacadoProdutoRow
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead>Foto</TableHead>
             <TableHead>Referencia</TableHead>
+            <TableHead>Codigo</TableHead>
+            <TableHead>Codigo de barras</TableHead>
             <TableHead>Produto</TableHead>
             <TableHead>Categoria</TableHead>
             <TableHead>Cor</TableHead>
@@ -39,13 +45,23 @@ export function AtacadoProdutosTable({ produtos }: { produtos: AtacadoProdutoRow
             <TableHead>Caixa</TableHead>
             <TableHead>Preco livre</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Acao</TableHead>
+            {canManage ? <TableHead>Acao</TableHead> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
           {produtos.map((produto) => (
             <TableRow key={produto.id}>
+              <TableCell>
+                {produto.fotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={produto.fotoUrl} alt={produto.nome} className="h-12 w-12 rounded-md border object-cover" />
+                ) : (
+                  <div className="grid h-12 w-12 place-items-center rounded-md border bg-muted text-center text-xs text-muted-foreground">Sem foto</div>
+                )}
+              </TableCell>
               <TableCell>{produto.referencia ?? "-"}</TableCell>
+              <TableCell>{produto.codigo ?? "-"}</TableCell>
+              <TableCell>{produto.codigoBarras ?? "-"}</TableCell>
               <TableCell className="font-semibold">{produto.nome}</TableCell>
               <TableCell>{produto.categoria ?? "-"}</TableCell>
               <TableCell>{produto.cor ?? "-"}</TableCell>
@@ -53,14 +69,16 @@ export function AtacadoProdutosTable({ produtos }: { produtos: AtacadoProdutoRow
               <TableCell>{produto.quantidadePorCaixa} pares - {currency(produto.precoPorCaixa)}</TableCell>
               <TableCell>{produto.permiteEditarPrecoPedido ? "Sim" : "Nao"}</TableCell>
               <TableCell><AtacadoStatusBadge status={produto.status} /></TableCell>
-              <TableCell>
-                <Button type="button" variant="outline" onClick={() => setEditing(produto)}>Editar</Button>
-              </TableCell>
+              {canManage ? (
+                <TableCell>
+                  <Button type="button" variant="outline" onClick={() => setEditing(produto)}>Editar</Button>
+                </TableCell>
+              ) : null}
             </TableRow>
           ))}
         </TableBody>
       </Table>
-      {editing ? <ProdutoEditModal produto={editing} onClose={() => setEditing(null)} /> : null}
+      {canManage && editing ? <ProdutoEditModal produto={editing} onClose={() => setEditing(null)} /> : null}
     </>
   );
 }
@@ -81,6 +99,14 @@ function ProdutoEditModal({ produto, onClose }: { produto: AtacadoProdutoRow; on
           <div className="space-y-2">
             <Label>Referencia</Label>
             <Input name="referencia" defaultValue={produto.referencia ?? ""} />
+          </div>
+          <div className="space-y-2">
+            <Label>Codigo</Label>
+            <Input name="codigo" defaultValue={produto.codigo ?? ""} />
+          </div>
+          <div className="space-y-2">
+            <Label>Codigo de barras</Label>
+            <Input name="codigoBarras" inputMode="numeric" defaultValue={produto.codigoBarras ?? ""} />
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Nome</Label>
@@ -120,6 +146,15 @@ function ProdutoEditModal({ produto, onClose }: { produto: AtacadoProdutoRow; on
           <div className="space-y-2 md:col-span-5">
             <Label>Observacoes</Label>
             <Input name="observacoes" defaultValue={produto.observacoes ?? ""} />
+          </div>
+          <div className="space-y-2 md:col-span-5">
+            <Label htmlFor={`foto-produto-${produto.id}`}>Foto do produto</Label>
+            {produto.fotoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={produto.fotoUrl} alt={produto.nome} className="mb-2 h-28 w-28 rounded-md border object-cover" />
+            ) : null}
+            <Input id={`foto-produto-${produto.id}`} name="foto" type="file" accept="image/*" />
+            <p className="text-xs text-muted-foreground">Ao selecionar outra imagem, ela passa a ser a foto principal.</p>
           </div>
           <div className="flex justify-end gap-2 md:col-span-5">
             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>

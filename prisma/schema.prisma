@@ -485,6 +485,8 @@ model AtacadoCliente {
 model AtacadoProduto {
   id                 String               @id @default(uuid()) @db.Uuid
   referencia         String?
+  codigo             String?
+  codigoBarras       String?
   nome               String
   categoria          String?
   cor                String?
@@ -501,6 +503,8 @@ model AtacadoProduto {
 
   @@index([nome])
   @@index([referencia])
+  @@index([codigo])
+  @@index([codigoBarras])
   @@map("atacado_produtos")
 }
 

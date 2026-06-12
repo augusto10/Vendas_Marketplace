@@ -4,137 +4,194 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createPedidoAction } from "@/features/atacado/actions";
 import { currency } from "@/lib/utils";
+import { ProdutosListTable, type Produto } from "@/features/atacado/produtos-list-table";
+import { PedidoItemsList, type PedidoItem } from "@/features/atacado/pedido-items-list";
 
 type ClienteOption = {
   id: string;
   nome: string;
 };
 
-type ProdutoOption = {
-  id: string;
-  nome: string;
-  precoPorCaixa: number;
-  quantidadePorCaixa: number;
-  cor: string | null;
-  grade: string | null;
+type ProdutoOption = Produto & {
   permiteEditarPrecoPedido: boolean;
 };
 
 export function NewPedidoForm({ clientes, produtos }: { clientes: ClienteOption[]; produtos: ProdutoOption[] }) {
-  const [produtoId, setProdutoId] = useState("");
-  const [precoCaixa, setPrecoCaixa] = useState("");
-  const [quantidadeCaixas, setQuantidadeCaixas] = useState(1);
-  const [descontoPercentual, setDescontoPercentual] = useState("");
+  const [clienteId, setClienteId] = useState("");
+  const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
 
-  const selectedProduct = useMemo(() => produtos.find((produto) => produto.id === produtoId), [produtoId, produtos]);
-  const precoBase = precoCaixa === "" ? 0 : Number(precoCaixa);
-  const desconto = Math.min(Math.max(Number(descontoPercentual || 0), 0), 100);
-  const precoFinal = precoBase * (1 - desconto / 100);
-  const total = precoFinal * Math.max(Number(quantidadeCaixas || 0), 0);
-  const changedPrice = Boolean(selectedProduct) && precoCaixa !== "" && Number(precoCaixa) !== selectedProduct?.precoPorCaixa;
-  const changedDiscount = desconto > 0;
-  const needsAdminPassword = Boolean(selectedProduct && !selectedProduct.permiteEditarPrecoPedido && (changedPrice || changedDiscount));
+  const selectedCliente = useMemo(() => clientes.find((c) => c.id === clienteId), [clienteId, clientes]);
+
+  const handleAddProduto = (produto: Produto) => {
+    const existingIndex = pedidoItems.findIndex((item) => item.produtoId === produto.id);
+
+    if (existingIndex >= 0) {
+      // Se já existe, aumenta a quantidade
+      const updated = [...pedidoItems];
+      updated[existingIndex].quantidadeCaixas += 1;
+      setPedidoItems(updated);
+    } else {
+      // Adiciona novo item
+      const newItem: PedidoItem = {
+        id: `${produto.id}-${Date.now()}`,
+        produtoId: produto.id,
+        nomeProduto: produto.nome,
+        cor: produto.cor,
+        grade: produto.grade,
+        precoCaixa: produto.precoPorCaixa,
+        quantidadeCaixas: 1,
+        descontoPercentual: 0
+      };
+      setPedidoItems([...pedidoItems, newItem]);
+    }
+  };
+
+  const handleRemoveItem = (produtoId: string) => {
+    setPedidoItems(pedidoItems.filter((item) => item.produtoId !== produtoId));
+  };
+
+  const handleUpdateQuantidade = (produtoId: string, quantidade: number) => {
+    setPedidoItems(
+      pedidoItems.map((item) =>
+        item.produtoId === produtoId ? { ...item, quantidadeCaixas: quantidade } : item
+      )
+    );
+  };
+
+  const handleUpdatePreco = (produtoId: string, preco: number) => {
+    setPedidoItems(
+      pedidoItems.map((item) =>
+        item.produtoId === produtoId ? { ...item, precoCaixa: preco } : item
+      )
+    );
+  };
+
+  const handleUpdateDesconto = (produtoId: string, desconto: number) => {
+    setPedidoItems(
+      pedidoItems.map((item) =>
+        item.produtoId === produtoId ? { ...item, descontoPercentual: desconto } : item
+      )
+    );
+  };
 
   return (
-    <form action={createPedidoAction} className="grid gap-4 md:grid-cols-6">
-      <div className="space-y-2 md:col-span-2">
-        <Label>Cliente</Label>
-        <select name="clienteId" className="form-select" required>
-          <option value="">Selecione</option>
-          {clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}
-        </select>
-      </div>
-      <div className="space-y-2 md:col-span-2">
-        <Label>Produto</Label>
-        <select
-          name="produtoId"
-          className="form-select"
-          required
-          value={produtoId}
-          onChange={(event) => {
-            const nextProduct = produtos.find((produto) => produto.id === event.target.value);
-            setProdutoId(event.target.value);
-            setPrecoCaixa(nextProduct ? String(nextProduct.precoPorCaixa) : "");
-          }}
-        >
-          <option value="">Selecione</option>
-          {produtos.map((produto) => (
-            <option key={produto.id} value={produto.id}>
-              {produto.nome} {produto.cor ? `- ${produto.cor}` : ""} {produto.grade ? `- ${produto.grade}` : ""} - {currency(produto.precoPorCaixa)}
-            </option>
-          ))}
-        </select>
-      </div>
-      {selectedProduct ? (
-        <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm md:col-span-2">
-          <div><span className="text-muted-foreground">Cor:</span> <span className="font-medium">{selectedProduct.cor || "-"}</span></div>
-          <div><span className="text-muted-foreground">Grade:</span> <span className="font-medium">{selectedProduct.grade || "-"}</span></div>
-          <div><span className="text-muted-foreground">Preco padrao:</span> <span className="font-medium">{currency(selectedProduct.precoPorCaixa)}</span></div>
-        </div>
-      ) : null}
-      <div className="space-y-2">
-        <Label>Caixas</Label>
-        <Input
-          name="quantidadeCaixas"
-          type="number"
-          min={1}
-          value={quantidadeCaixas}
-          onChange={(event) => setQuantidadeCaixas(Number(event.target.value))}
-          required
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Valor caixa</Label>
-        <Input
-          name="precoCaixa"
-          type="number"
-          min={0}
-          step="0.01"
-          value={precoCaixa}
-          onChange={(event) => setPrecoCaixa(event.target.value)}
-          placeholder="0,00"
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Desconto %</Label>
-        <Input
-          name="descontoPercentual"
-          type="number"
-          min={0}
-          max={100}
-          step="0.01"
-          value={descontoPercentual}
-          onChange={(event) => setDescontoPercentual(event.target.value)}
-        />
-      </div>
-      <div className="space-y-2 md:col-span-2">
-        <Label>Total previsto</Label>
-        <div className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm font-semibold">
-          {currency(total)}
-        </div>
-      </div>
-      <div className="space-y-2 md:col-span-3">
-        <Label>Observacao</Label>
-        <Input name="observacao" />
-      </div>
-      {needsAdminPassword ? (
-        <div className="grid gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 md:col-span-6 md:grid-cols-2">
-          <div className="md:col-span-2 text-sm font-medium text-amber-700 dark:text-amber-200">
-            Este produto exige senha de administrador para alterar preco ou desconto.
+    <div className="space-y-6">
+      {/* Seleção de Cliente */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Novo Pedido</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 md:w-96">
+            <Label>Cliente</Label>
+            <select
+              value={clienteId}
+              onChange={(e) => setClienteId(e.target.value)}
+              className="form-select"
+              required
+            >
+              <option value="">Selecione um cliente</option>
+              {clientes.map((cliente) => (
+                <option key={cliente.id} value={cliente.id}>
+                  {cliente.nome}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="space-y-2">
-            <Label>Email administrador</Label>
-            <Input name="adminEmail" type="email" required={needsAdminPassword} />
-          </div>
-          <div className="space-y-2">
-            <Label>Senha administrador</Label>
-            <Input name="adminPassword" type="password" required={needsAdminPassword} />
-          </div>
-        </div>
-      ) : null}
-      <Button className="md:col-span-6 md:justify-self-end" type="submit">Gerar pedido</Button>
-    </form>
+        </CardContent>
+      </Card>
+
+      {/* Listagem de Produtos */}
+      {selectedCliente && (
+        <>
+          <ProdutosListTable
+            produtos={produtos}
+            onSelectProduto={handleAddProduto}
+            title="Produtos disponíveis"
+            description="Clique em 'Adicionar' para incluir produtos ao pedido"
+          />
+
+          {/* Carrinho de Itens */}
+          {pedidoItems.length > 0 && (
+            <>
+              <PedidoItemsList
+                items={pedidoItems}
+                onRemoveItem={handleRemoveItem}
+                onUpdateQuantidade={handleUpdateQuantidade}
+                onUpdatePreco={handleUpdatePreco}
+                onUpdateDesconto={handleUpdateDesconto}
+              />
+
+              {/* Formulário Final */}
+              <form
+                action={createPedidoAction}
+                className="space-y-4"
+              >
+                <input type="hidden" name="clienteId" value={clienteId} />
+                <input type="hidden" name="itemsJson" value={JSON.stringify(pedidoItems)} />
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Informações do Pedido</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="observacao">Observação</Label>
+                        <Input
+                          id="observacao"
+                          name="observacao"
+                          placeholder="Adicione observações sobre o pedido"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setClienteId("");
+                      setPedidoItems([]);
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit">
+                    Gerar Pedido ({pedidoItems.length} itens)
+                  </Button>
+                </div>
+              </form>
+            </>
+          )}
+
+          {pedidoItems.length === 0 && (
+            <Card className="border-dashed">
+              <CardContent className="pt-6">
+                <div className="text-center text-muted-foreground">
+                  <p className="mb-2">Nenhum produto adicionado</p>
+                  <p className="text-sm">Clique em "Adicionar" em um produto da lista acima</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {!selectedCliente && (
+        <Card className="border-dashed">
+          <CardContent className="pt-6">
+            <div className="text-center text-muted-foreground">
+              <p>Selecione um cliente acima para começar a criar o pedido</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const access = await requirePermission("atacado.entregas.update", request);
+    const access = await requirePermission("atacado.separacao.update", request);
     if (access.error || !access.user) return access.error;
 
     const { id } = await context.params;

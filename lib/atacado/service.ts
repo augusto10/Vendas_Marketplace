@@ -44,12 +44,14 @@ export async function listProdutos(query?: string) {
           OR: [
             { nome: { contains: query, mode: "insensitive" } },
             { referencia: { contains: query, mode: "insensitive" } },
+            { codigo: { contains: query, mode: "insensitive" } },
+            { codigoBarras: { contains: query, mode: "insensitive" } },
             { categoria: { contains: query, mode: "insensitive" } },
             { cor: { contains: query, mode: "insensitive" } }
           ]
         }
       : undefined,
-    include: { fotos: { orderBy: { createdAt: "desc" }, take: 1 } },
+    include: { fotos: { orderBy: [{ principal: "desc" }, { createdAt: "desc" }], take: 1 } },
     orderBy: { updatedAt: "desc" },
     take: 100
   });
@@ -78,16 +80,25 @@ export function updateProduto(id: string, data: ProdutoInput) {
 
 export async function addProdutoFoto(id: string, file: File, principal = false) {
   const uploaded = await uploadImage(file, cloudinaryFolder("produtos"));
-  return prisma.atacadoProdutoFoto.create({
-    data: {
-      produtoId: id,
-      url: uploaded.url,
-      publicId: uploaded.publicId,
-      mimeType: uploaded.mimeType,
-      size: uploaded.size,
-      principal,
-      metadata: { width: uploaded.width, height: uploaded.height }
+  return prisma.$transaction(async (tx) => {
+    if (principal) {
+      await tx.atacadoProdutoFoto.updateMany({
+        where: { produtoId: id, principal: true },
+        data: { principal: false }
+      });
     }
+
+    return tx.atacadoProdutoFoto.create({
+      data: {
+        produtoId: id,
+        url: uploaded.url,
+        publicId: uploaded.publicId,
+        mimeType: uploaded.mimeType,
+        size: uploaded.size,
+        principal,
+        metadata: { width: uploaded.width, height: uploaded.height }
+      }
+    });
   });
 }
 
@@ -290,10 +301,7 @@ export function listPedidosLiberadosParaEntrega() {
 
 export function listEntregasMotorista(userId: string) {
   return prisma.atacadoEntrega.findMany({
-    where: {
-      motoristaId: userId,
-      status: { in: ["PENDENTE", "EM_ROTA"] }
-    },
+    where: { motoristaId: userId },
     include: {
       pedido: {
         include: {
@@ -403,34 +411,62 @@ export async function liberarEntregaExpedicao(id: string, userId: string) {
 }
 
 export async function concluirEntrega(id: string, data: ConcluirEntregaInput, userId: string, file?: File) {
-  const current = await prisma.atacadoEntrega.findUniqueOrThrow({ where: { id }, select: { motoristaId: true } });
+  const current = await prisma.atacadoEntrega.findUniqueOrThrow({
+    where: { id },
+    select: {
+      motoristaId: true,
+      pedidoId: true,
+      status: true,
+      pedido: { select: { status: true } }
+    }
+  });
   if (current.motoristaId !== userId) {
     throw new Error("Entrega nao atribuida a este motorista.");
   }
+  if (current.status !== "EM_ROTA") {
+    throw new Error("A entrega precisa estar em rota para ser finalizada.");
+  }
+  if (!file || file.size === 0) {
+    throw new Error("A foto da entrega e obrigatoria.");
+  }
 
-  const uploaded = file ? await uploadImage(file, cloudinaryFolder("entregas")) : null;
+  const uploaded = await uploadImage(file, cloudinaryFolder("entregas"));
 
   const observacoes = [
-    data.recebedorNome ? `Recebedor: ${data.recebedorNome}` : null,
-    data.assinaturaNome ? `Assinatura: ${data.assinaturaNome}` : null,
+    `Recebedor: ${data.recebedorNome}`,
     data.observacao
   ].filter(Boolean);
 
-  const entrega = await prisma.atacadoEntrega.update({
-    where: { id },
-    data: {
-      status: "ENTREGUE",
-      reciboUrl: uploaded?.url,
-      reciboPublicId: uploaded?.publicId,
-      latitude: data.latitude == null ? undefined : new Prisma.Decimal(data.latitude),
-      longitude: data.longitude == null ? undefined : new Prisma.Decimal(data.longitude),
-      observacao: observacoes.join("\n") || undefined,
-      entregueEm: new Date()
-    }
-  });
+  return prisma.$transaction(async (tx) => {
+    const entrega = await tx.atacadoEntrega.update({
+      where: { id },
+      data: {
+        status: "ENTREGUE",
+        reciboUrl: uploaded.url,
+        reciboPublicId: uploaded.publicId,
+        latitude: data.latitude == null ? undefined : new Prisma.Decimal(data.latitude),
+        longitude: data.longitude == null ? undefined : new Prisma.Decimal(data.longitude),
+        observacao: observacoes.join("\n"),
+        entregueEm: new Date()
+      }
+    });
 
-  await updatePedidoStatus(entrega.pedidoId, { status: "ENTREGUE", observacao: "Entrega concluida" }, userId);
-  return entrega;
+    await tx.atacadoPedido.update({
+      where: { id: current.pedidoId },
+      data: { status: "ENTREGUE" }
+    });
+    await tx.atacadoHistoricoStatus.create({
+      data: {
+        pedidoId: current.pedidoId,
+        usuarioId: userId,
+        statusAnterior: current.pedido.status,
+        statusNovo: "ENTREGUE",
+        observacao: `Entrega concluida por ${data.recebedorNome}`
+      }
+    });
+
+    return entrega;
+  });
 }
 
 export async function getAtacadoDashboard() {

@@ -43,7 +43,6 @@ export type PermissionKey = (typeof PERMISSIONS)[number];
 
 export function hasPermission(user: { roles: string[]; permissions: string[] } | null, permission: PermissionKey) {
   if (!user) return false;
-  if (user.roles.includes("master")) return true;
-  if (user.roles.includes("admin") && permission.endsWith(".view")) return true;
+  if (user.roles.includes("master") || user.roles.includes("admin")) return true;
   return user.permissions.includes(permission);
 }
