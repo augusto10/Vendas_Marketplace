@@ -14,22 +14,28 @@ export const dynamic = "force-dynamic";
 export default async function AtacadoProdutosPage() {
   const [session, produtos] = await Promise.all([auth(), listProdutos()]);
   const canManageProducts = hasPermission(session?.user ?? null, "atacado.produtos.manage");
-  const produtoRows: AtacadoProdutoRow[] = produtos.map((produto) => ({
-    id: produto.id,
-    referencia: produto.referencia,
-    codigo: produto.codigo,
-    codigoBarras: produto.codigoBarras,
-    nome: produto.nome,
-    categoria: produto.categoria,
-    cor: produto.cor,
-    grade: produto.grade,
-    quantidadePorCaixa: produto.quantidadePorCaixa,
-    precoPorCaixa: Number(produto.precoPorCaixa),
-    permiteEditarPrecoPedido: produto.permiteEditarPrecoPedido,
-    status: produto.status,
-    observacoes: produto.observacoes,
-    fotoUrl: produto.fotos[0]?.url ?? null
-  }));
+  const produtoRows: AtacadoProdutoRow[] = produtos.map((produto) => {
+    const produtoCompat = produto as typeof produto & { numeracao: string | null; embalagem: string | null };
+
+    return {
+      id: produto.id,
+      referencia: produto.referencia,
+      codigo: produto.codigo,
+      codigoBarras: produto.codigoBarras,
+      nome: produto.nome,
+      categoria: produto.categoria,
+      cor: produto.cor,
+      grade: produto.grade,
+      numeracao: produtoCompat.numeracao,
+      embalagem: produtoCompat.embalagem,
+      quantidadePorCaixa: produto.quantidadePorCaixa,
+      precoPorCaixa: Number(produto.precoPorCaixa),
+      permiteEditarPrecoPedido: produto.permiteEditarPrecoPedido,
+      status: produto.status,
+      observacoes: produto.observacoes,
+      fotoUrl: produto.fotos[0]?.url ?? null
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -40,14 +46,34 @@ export default async function AtacadoProdutosPage() {
           <CardContent>
             <form action={createProdutoAction} className="grid gap-4 md:grid-cols-5">
               <div className="space-y-2"><Label>Referencia</Label><Input name="referencia" /></div>
-              <div className="space-y-2"><Label>Codigo</Label><Input name="codigo" /></div>
-              <div className="space-y-2"><Label>Codigo de barras</Label><Input name="codigoBarras" inputMode="numeric" /></div>
               <div className="space-y-2 md:col-span-2"><Label>Nome</Label><Input name="nome" required /></div>
               <div className="space-y-2"><Label>Categoria</Label><Input name="categoria" /></div>
               <div className="space-y-2"><Label>Cor</Label><Input name="cor" /></div>
-              <div className="space-y-2"><Label>Grade</Label><Input name="grade" /></div>
+              <div className="space-y-2">
+                <Label>Grade</Label>
+                <select name="grade" className="form-select" defaultValue="">
+                  <option value="">Selecione</option>
+                  <option value="ALTA">Alta</option>
+                  <option value="BAIXA">Baixa</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Numeracao</Label>
+                <select name="numeracao" className="form-select" defaultValue="">
+                  <option value="">Selecione</option>
+                  {shoeSizes.map((size) => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Embalagem</Label>
+                <select name="embalagem" className="form-select" defaultValue="">
+                  <option value="">Selecione</option>
+                  <option value="SACO">Saco</option>
+                  <option value="CAIXA">Caixa</option>
+                </select>
+              </div>
               <div className="space-y-2"><Label>Pares por caixa</Label><Input name="quantidadePorCaixa" type="number" defaultValue={12} /></div>
-              <div className="space-y-2"><Label>Preco caixa</Label><Input name="precoPorCaixa" type="number" step="0.01" required /></div>
+              <div className="space-y-2"><Label>Preco caixa</Label><Input name="precoPorCaixa" type="text" inputMode="decimal" placeholder="0,00" required /></div>
               <label className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium md:col-span-2">
                 <input type="checkbox" name="permiteEditarPrecoPedido" className="h-4 w-4 accent-primary" />
                 Liberar preco/desconto no pedido sem senha
@@ -71,3 +97,5 @@ export default async function AtacadoProdutosPage() {
     </div>
   );
 }
+
+const shoeSizes = ["33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47"];

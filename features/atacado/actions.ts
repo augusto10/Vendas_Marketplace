@@ -1,6 +1,7 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/atacado/permissions";
 import { prisma } from "@/lib/prisma";
@@ -15,6 +16,10 @@ function formString(formData: FormData, key: string) {
 function formFile(formData: FormData, key: string) {
   const value = formData.get(key);
   return value instanceof File && value.size > 0 ? value : undefined;
+}
+
+function formDecimalString(formData: FormData, key: string, fallback = "0") {
+  return (formString(formData, key) ?? fallback).replace(",", ".");
 }
 
 export async function createClienteAction(formData: FormData) {
@@ -35,6 +40,35 @@ export async function createClienteAction(formData: FormData) {
   revalidatePath("/atacado/clientes");
 }
 
+export async function updateClienteAction(formData: FormData) {
+  const access = await requirePermission("atacado.clientes.manage");
+  if (access.error) return;
+
+  const clienteId = formString(formData, "clienteId");
+  if (!clienteId) return;
+
+  const data = clienteSchema.parse({
+    nome: formString(formData, "nome"),
+    telefone: formString(formData, "telefone"),
+    cidade: formString(formData, "cidade"),
+    estado: formString(formData, "estado"),
+    endereco: formString(formData, "endereco"),
+    documento: formString(formData, "documento"),
+    observacoes: formString(formData, "observacoes"),
+    status: formString(formData, "status") ?? "ATIVO"
+  });
+
+  await prisma.atacadoCliente.update({
+    where: { id: clienteId },
+    data
+  });
+
+  revalidatePath("/atacado/clientes");
+  revalidatePath(`/atacado/clientes/${clienteId}/editar`);
+  revalidatePath(`/atacado/clientes/${clienteId}/carteira`);
+  redirect("/atacado/clientes");
+}
+
 export async function createProdutoAction(formData: FormData) {
   const access = await requirePermission("atacado.produtos.manage");
   if (access.error) return;
@@ -47,8 +81,10 @@ export async function createProdutoAction(formData: FormData) {
     categoria: formString(formData, "categoria"),
     cor: formString(formData, "cor"),
     grade: formString(formData, "grade"),
+    numeracao: formString(formData, "numeracao"),
+    embalagem: formString(formData, "embalagem"),
     quantidadePorCaixa: formString(formData, "quantidadePorCaixa") ?? "12",
-    precoPorCaixa: formString(formData, "precoPorCaixa") ?? "0",
+    precoPorCaixa: formDecimalString(formData, "precoPorCaixa"),
     permiteEditarPrecoPedido: formData.get("permiteEditarPrecoPedido") === "on",
     status: formString(formData, "status") ?? "ATIVO",
     observacoes: formString(formData, "observacoes")
@@ -74,8 +110,10 @@ export async function updateProdutoAction(formData: FormData) {
     categoria: formString(formData, "categoria"),
     cor: formString(formData, "cor"),
     grade: formString(formData, "grade"),
+    numeracao: formString(formData, "numeracao"),
+    embalagem: formString(formData, "embalagem"),
     quantidadePorCaixa: formString(formData, "quantidadePorCaixa") ?? "12",
-    precoPorCaixa: formString(formData, "precoPorCaixa") ?? "0",
+    precoPorCaixa: formDecimalString(formData, "precoPorCaixa"),
     permiteEditarPrecoPedido: formData.get("permiteEditarPrecoPedido") === "on",
     status: formString(formData, "status") ?? "ATIVO",
     observacoes: formString(formData, "observacoes")

@@ -1,4 +1,5 @@
 import { v2 as cloudinary, type UploadApiResponse } from "cloudinary";
+import sharp from "sharp";
 
 const maxFileSize = 8 * 1024 * 1024;
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
@@ -31,7 +32,8 @@ export async function uploadImage(file: File, folder: string): Promise<UploadedI
     throw new Error("Imagem acima do limite de 8MB.");
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  const originalBuffer = Buffer.from(await file.arrayBuffer());
+  const { buffer, mimeType, size, width, height } = await optimizeImage(originalBuffer, file.type);
   const result = await new Promise<UploadApiResponse>((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
@@ -55,10 +57,32 @@ export async function uploadImage(file: File, folder: string): Promise<UploadedI
   return {
     url: result.secure_url,
     publicId: result.public_id,
-    mimeType: file.type,
-    size: file.size,
-    width: result.width,
-    height: result.height
+    mimeType,
+    size,
+    width: result.width ?? width,
+    height: result.height ?? height
+  };
+}
+
+async function optimizeImage(buffer: Buffer, inputMimeType: string) {
+  const image = sharp(buffer).rotate().resize({
+    width: 1600,
+    height: 1600,
+    fit: "inside",
+    withoutEnlargement: true
+  });
+
+  const shouldPreserveAlpha = inputMimeType === "image/png" || inputMimeType === "image/webp";
+  const output = shouldPreserveAlpha
+    ? await image.webp({ quality: 82 }).toBuffer({ resolveWithObject: true })
+    : await image.jpeg({ quality: 82, mozjpeg: true }).toBuffer({ resolveWithObject: true });
+
+  return {
+    buffer: output.data,
+    mimeType: shouldPreserveAlpha ? "image/webp" : "image/jpeg",
+    size: output.info.size,
+    width: output.info.width,
+    height: output.info.height
   };
 }
 
@@ -66,4 +90,3 @@ export function cloudinaryFolder(child: string) {
   const base = process.env.CLOUDINARY_FOLDER || "atacado";
   return `${base}/${child}`;
 }
-

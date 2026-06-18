@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { updatePedidoStatusAction } from "@/features/atacado/actions";
 import { AtacadoStatusBadge, statusLabel } from "@/features/atacado/status";
 import { currency } from "@/lib/utils";
 import { Package } from "lucide-react";
@@ -60,21 +59,8 @@ export type AtacadoPedidoRow = {
 
 const lockedStatuses = ["EM_ENTREGA", "ENTREGUE", "CANCELADO"];
 
-const statusOptions = [
-  "AGUARDANDO_SEPARACAO",
-  "EM_SEPARACAO",
-  "SEPARADO",
-  "AGUARDANDO_PAGAMENTO",
-  "PAGO",
-  "EM_EXPEDICAO",
-  "EM_ENTREGA",
-  "ENTREGUE",
-  "CANCELADO"
-];
-
-export function AtacadoPedidosTable({ pedidos, canUpdatePedidos, isMaster }: { pedidos: AtacadoPedidoRow[]; canUpdatePedidos: boolean; isMaster: boolean }) {
+export function AtacadoPedidosTable({ pedidos, isMaster }: { pedidos: AtacadoPedidoRow[]; isMaster: boolean }) {
   const [selected, setSelected] = useState<AtacadoPedidoRow | null>(null);
-  const [editing, setEditing] = useState<AtacadoPedidoRow | null>(null);
 
   return (
     <>
@@ -90,7 +76,6 @@ export function AtacadoPedidosTable({ pedidos, canUpdatePedidos, isMaster }: { p
           {pedidos.map((pedido) => {
             const locked = isLockedPedido(pedido.status);
             const canOpen = !locked || isMaster;
-            const canEdit = canUpdatePedidos && (!locked || isMaster);
 
             return (
               <TableRow key={pedido.id}>
@@ -100,9 +85,6 @@ export function AtacadoPedidosTable({ pedidos, canUpdatePedidos, isMaster }: { p
                   <div className="flex flex-wrap items-center gap-2">
                     <Button type="button" variant="outline" disabled={!canOpen} onClick={() => setSelected(pedido)}>
                       Detalhe
-                    </Button>
-                    <Button type="button" variant="outline" disabled={!canEdit} onClick={() => setEditing(pedido)}>
-                      Editar
                     </Button>
                     {pedido.status !== "CANCELADO" && pedido.status !== "ENTREGUE" && (
                       <Link href={`/atacado/pedidos/${pedido.id}/separacao`}>
@@ -123,56 +105,7 @@ export function AtacadoPedidosTable({ pedidos, canUpdatePedidos, isMaster }: { p
         </TableBody>
       </Table>
       {selected ? <PedidoDetailsModal pedido={selected} onClose={() => setSelected(null)} /> : null}
-      {editing ? <PedidoEditModal pedido={editing} onClose={() => setEditing(null)} isMaster={isMaster} /> : null}
     </>
-  );
-}
-
-function PedidoEditModal({ pedido, onClose, isMaster }: { pedido: AtacadoPedidoRow; onClose: () => void; isMaster: boolean }) {
-  const locked = isLockedPedido(pedido.status);
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-xl rounded-lg border bg-background shadow-lg">
-        <div className="flex items-start justify-between gap-4 border-b p-4">
-          <div>
-            <div className="text-sm text-muted-foreground">Editar pedido</div>
-            <h2 className="text-xl font-semibold">{pedido.numero}</h2>
-          </div>
-          <Button type="button" variant="outline" onClick={onClose}>Fechar</Button>
-        </div>
-        <form action={updatePedidoStatusAction} className="space-y-4 p-4">
-          <input type="hidden" name="pedidoId" value={pedido.id} />
-          <div className="space-y-2">
-            <label htmlFor={`status-${pedido.id}`} className="text-sm font-medium">Status</label>
-            <select id={`status-${pedido.id}`} name="status" className="form-select" defaultValue={pedido.status} disabled={locked && !isMaster}>
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>{statusLabel(status)}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <label htmlFor={`observacao-${pedido.id}`} className="text-sm font-medium">Observacao</label>
-            <textarea
-              id={`observacao-${pedido.id}`}
-              name="observacao"
-              className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              placeholder="Motivo ou observacao da edicao"
-              disabled={locked && !isMaster}
-            />
-          </div>
-          {locked && isMaster ? (
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-200">
-              Pedido em rota ou finalizado. Edicao liberada apenas para Administrador Master.
-            </div>
-          ) : null}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" disabled={locked && !isMaster}>Salvar</Button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
 

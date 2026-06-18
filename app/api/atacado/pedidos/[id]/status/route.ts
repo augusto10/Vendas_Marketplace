@@ -19,7 +19,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
     const { id } = await context.params;
     const isAdmin = access.user.roles.some((role) => ["master", "admin", "admin_atacado"].includes(role));
-    const pedido = await updatePedidoStatus(id, body, access.user.id, { isMaster: isAdmin });
+    const pedido = await updatePedidoStatus(id, body, access.user.id, {
+      isMaster: isAdmin,
+      createOpenMovement: body.status === "AGUARDANDO_PAGAMENTO"
+    });
     return ok({ pedido });
   } catch (error) {
     return handleApiError(error);

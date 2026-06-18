@@ -1,12 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listPedidos } from "@/lib/atacado/service";
-import { registerPagamentoAction, updatePedidoStatusAction } from "@/features/atacado/actions";
+import { updatePedidoStatusAction } from "@/features/atacado/actions";
 import { AtacadoStatusBadge } from "@/features/atacado/status";
 import { currency } from "@/lib/utils";
+import { PagamentoForm } from "@/features/atacado/pagamento-form";
 
 export const dynamic = "force-dynamic";
 
@@ -30,17 +30,11 @@ export default async function AtacadoFinanceiroPage() {
                   <TableCell><AtacadoStatusBadge status={pedido.status} /></TableCell>
                   <TableCell>{currency(pedido.valorTotal.toString())}</TableCell>
                   <TableCell>
-                    <form action={registerPagamentoAction} encType="multipart/form-data" className="flex min-w-[520px] items-center gap-2">
-                      <input type="hidden" name="pedidoId" value={pedido.id} />
-                      <select name="status" className="form-select w-36" defaultValue="PAGO">
-                        <option value="PENDENTE">Pendente</option>
-                        <option value="PARCIAL">Parcial</option>
-                        <option value="PAGO">Pago</option>
-                      </select>
-                      <Input name="valorPago" type="number" step="0.01" defaultValue={pedido.valorTotal.toString()} className="w-36" />
-                      <Input name="file" type="file" accept="image/*" className="w-44" />
-                      <Button type="submit">Registrar</Button>
-                    </form>
+                    <PagamentoForm
+                      pedidoId={pedido.id}
+                      valorTotal={pedido.valorTotal.toString()}
+                      comprovanteUrl={pedido.pagamentos[0]?.comprovanteUrl}
+                    />
                     {pedido.status === "SEPARADO" ? (
                       <form action={updatePedidoStatusAction} className="mt-2">
                         <input type="hidden" name="pedidoId" value={pedido.id} />
@@ -58,4 +52,3 @@ export default async function AtacadoFinanceiroPage() {
     </div>
   );
 }
-

@@ -18,7 +18,9 @@ export const produtoSchema = z.object({
   nome: z.string().min(2),
   categoria: z.string().optional().nullable(),
   cor: z.string().optional().nullable(),
-  grade: z.string().optional().nullable(),
+  grade: z.enum(["ALTA", "BAIXA"]).optional().nullable(),
+  numeracao: z.enum(["33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47"]).optional().nullable(),
+  embalagem: z.enum(["SACO", "CAIXA"]).optional().nullable(),
   quantidadePorCaixa: z.coerce.number().int().positive().default(12),
   precoPorCaixa: z.coerce.number().nonnegative(),
   permiteEditarPrecoPedido: z.coerce.boolean().default(false),
@@ -76,4 +78,35 @@ export const concluirEntregaSchema = z.object({
   longitude: z.coerce.number().optional().nullable(),
   recebedorNome: z.string().trim().min(2, "Informe o nome de quem recebeu."),
   observacao: z.string().optional().nullable()
+});
+
+export const carteiraMovimentoBaseSchema = z.object({
+  valor: z.coerce.number().positive(),
+  observacao: z.string().min(2),
+  dataCompetencia: z.coerce.date().optional().nullable()
+});
+
+export const carteiraCreditoSchema = carteiraMovimentoBaseSchema;
+
+export const carteiraDebitoSchema = carteiraMovimentoBaseSchema;
+
+export const carteiraAjusteSchema = carteiraMovimentoBaseSchema.extend({
+  tipo: z.enum(["CREDITO", "DEBITO"])
+});
+
+export const carteiraExtratoQuerySchema = z.object({
+  dataInicio: z.coerce.date().optional().nullable(),
+  dataFim: z.coerce.date().optional().nullable(),
+  tipo: z.enum([
+    "PEDIDO_ABERTO_SEM_PAGAMENTO",
+    "PAGAMENTO_PARCIAL",
+    "PAGAMENTO_TOTAL",
+    "CREDITO_MANUAL",
+    "DEBITO_MANUAL",
+    "AJUSTE",
+    "ESTORNO",
+    "CANCELAMENTO_PEDIDO",
+    "SOBRA_PAGAMENTO"
+  ]).optional(),
+  pedidoId: z.string().uuid().optional()
 });

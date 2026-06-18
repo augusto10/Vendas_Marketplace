@@ -1,4 +1,13 @@
-import { Prisma, type AtacadoAnexoTipo, type AtacadoPedidoStatus, type AtacadoPagamentoStatus } from "@prisma/client";
+import {
+  Prisma,
+  type AtacadoAnexoTipo,
+  type AtacadoCarteiraMovimentoNatureza,
+  type AtacadoCarteiraMovimentoOrigem,
+  type AtacadoCarteiraMovimentoTipo,
+  type AtacadoPedidoStatus,
+  type AtacadoPagamentoStatus
+} from "@prisma/client";
+import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import type { z } from "zod";
 import type { clienteSchema, concluirEntregaSchema, entregaSchema, pagamentoSchema, pedidoSchema, produtoSchema, statusPedidoSchema } from "@/lib/atacado/schemas";
@@ -11,6 +20,214 @@ type StatusPedidoInput = z.infer<typeof statusPedidoSchema>;
 type PagamentoInput = z.infer<typeof pagamentoSchema>;
 type EntregaInput = z.infer<typeof entregaSchema>;
 type ConcluirEntregaInput = z.infer<typeof concluirEntregaSchema>;
+type CarteiraMovimentoNatureza = AtacadoCarteiraMovimentoNatureza;
+type CarteiraMovimentoTipo = AtacadoCarteiraMovimentoTipo;
+type CarteiraMovimentoOrigem = AtacadoCarteiraMovimentoOrigem;
+
+type CarteiraMovimentoInput = {
+  clienteId: string;
+  pedidoId?: string | null;
+  pagamentoId?: string | null;
+  tipo: CarteiraMovimentoTipo;
+  natureza: CarteiraMovimentoNatureza;
+  valor: Prisma.Decimal.Value;
+  saldoAnterior?: Prisma.Decimal.Value;
+  dataMovimento?: Date;
+  dataCompetencia?: Date;
+  observacao?: string | null;
+  origem: CarteiraMovimentoOrigem;
+  criadoPorUsuarioId?: string | null;
+  idempotencyKey?: string | null;
+  metadata?: Prisma.InputJsonValue | null;
+};
+
+type DecimalLike = Prisma.Decimal.Value;
+
+function toDecimal(value: DecimalLike | Prisma.Decimal = 0) {
+  return value instanceof Prisma.Decimal ? value : new Prisma.Decimal(value);
+}
+
+function signedDelta(natureza: CarteiraMovimentoNatureza, valor: Prisma.Decimal) {
+  if (natureza === "CREDITO") return valor;
+  if (natureza === "DEBITO") return valor.neg();
+  return new Prisma.Decimal(0);
+}
+
+async function ensureCarteiraCliente(tx: Prisma.TransactionClient, clienteId: string) {
+  return tx.atacadoCarteiraCliente.upsert({
+    where: { clienteId },
+    update: {},
+    create: { clienteId }
+  });
+}
+
+async function lockCarteiraCliente(tx: Prisma.TransactionClient, clienteId: string) {
+  await ensureCarteiraCliente(tx, clienteId);
+  await tx.$queryRaw`
+    SELECT 1
+    FROM "atacado_carteiras_clientes"
+    WHERE "clienteId" = CAST(${clienteId} AS uuid)
+    FOR UPDATE
+  `;
+}
+
+async function sumMovimentosPedido(tx: Prisma.TransactionClient, pedidoId: string) {
+  const movimentos = await tx.atacadoCarteiraMovimento.findMany({
+    where: { pedidoId },
+    select: { natureza: true, valor: true }
+  });
+
+  return movimentos.reduce((saldo, movimento) => saldo.add(signedDelta(movimento.natureza, toDecimal(movimento.valor))), new Prisma.Decimal(0));
+}
+
+async function createCarteiraMovimento(tx: Prisma.TransactionClient, input: CarteiraMovimentoInput) {
+  if (input.idempotencyKey) {
+    const existing = await tx.atacadoCarteiraMovimento.findUnique({
+      where: { idempotencyKey: input.idempotencyKey }
+    });
+    if (existing) return existing;
+  }
+
+  await lockCarteiraCliente(tx, input.clienteId);
+  const carteira = await tx.atacadoCarteiraCliente.findUniqueOrThrow({
+    where: { clienteId: input.clienteId },
+    select: { saldoAtual: true }
+  });
+
+  const saldoAnterior = input.saldoAnterior ? toDecimal(input.saldoAnterior) : toDecimal(carteira.saldoAtual);
+  const valor = toDecimal(input.valor);
+  const delta = signedDelta(input.natureza, valor);
+  const saldoPosterior = saldoAnterior.add(delta);
+
+  return tx.atacadoCarteiraMovimento.create({
+    data: {
+      clienteId: input.clienteId,
+      pedidoId: input.pedidoId ?? null,
+      pagamentoId: input.pagamentoId ?? null,
+      tipo: input.tipo,
+      natureza: input.natureza,
+      valor,
+      saldoAnterior,
+      saldoPosterior,
+      dataMovimento: input.dataMovimento ?? new Date(),
+      dataCompetencia: input.dataCompetencia ?? input.dataMovimento ?? new Date(),
+      observacao: input.observacao ?? null,
+      origem: input.origem,
+      criadoPorUsuarioId: input.criadoPorUsuarioId ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
+      metadata: input.metadata ?? undefined
+    }
+  }).then(async (movimento) => {
+    await tx.atacadoCarteiraCliente.update({
+      where: { clienteId: input.clienteId },
+      data: { saldoAtual: saldoPosterior }
+    });
+    return movimento;
+  });
+}
+
+async function backfillCarteiraClienteHistorica(tx: Prisma.TransactionClient, clienteId: string) {
+  const pedidos = await tx.atacadoPedido.findMany({
+    where: {
+      clienteId,
+      status: { not: "RASCUNHO" }
+    },
+    select: {
+      id: true,
+      valorTotal: true,
+      status: true,
+      criadoEm: true,
+      pagamentos: {
+        select: {
+          id: true,
+          valorPago: true,
+          registradoEm: true,
+          status: true
+        },
+        orderBy: { registradoEm: "asc" }
+      }
+    },
+    orderBy: { criadoEm: "asc" }
+  });
+
+  for (const pedido of pedidos) {
+    const movimentosPedido = await tx.atacadoCarteiraMovimento.findMany({
+      where: { pedidoId: pedido.id },
+      select: { id: true }
+    });
+
+    if (movimentosPedido.length > 0) {
+      continue;
+    }
+
+    if (pedido.status === "CANCELADO") {
+      continue;
+    }
+
+    const dataMovimento = pedido.criadoEm ?? new Date();
+    let saldoPedido = toDecimal(pedido.valorTotal);
+    const possuiPagamento = pedido.pagamentos.some((pagamento) => pagamento.status !== "PENDENTE" && toDecimal(pagamento.valorPago).gt(0));
+
+    if (!possuiPagamento) {
+      await createCarteiraMovimento(tx, {
+        clienteId,
+        pedidoId: pedido.id,
+        tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO",
+        natureza: "DEBITO",
+        valor: saldoPedido,
+        origem: "SISTEMA",
+        dataMovimento,
+        dataCompetencia: dataMovimento,
+        observacao: "Backfill historico de pedido sem pagamento.",
+        idempotencyKey: `legacy:pedido:${pedido.id}:abertura`
+      });
+    }
+
+    for (const pagamento of pedido.pagamentos) {
+      const valorPago = toDecimal(pagamento.valorPago);
+      if (valorPago.lte(0) || pagamento.status === "PENDENTE") {
+        continue;
+      }
+
+      const valorAplicado = saldoPedido.gt(0) ? (valorPago.gte(saldoPedido) ? saldoPedido : valorPago) : valorPago;
+      const tipo = saldoPedido.gt(0) && valorAplicado.eq(saldoPedido) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
+      const dataPagamento = pagamento.registradoEm ?? dataMovimento;
+
+      if (valorAplicado.gt(0)) {
+        await createCarteiraMovimento(tx, {
+          clienteId,
+          pedidoId: pedido.id,
+          pagamentoId: pagamento.id,
+          tipo,
+          natureza: "CREDITO",
+          valor: valorAplicado,
+          origem: "SISTEMA",
+          dataMovimento: dataPagamento,
+          dataCompetencia: dataPagamento,
+          observacao: "Backfill historico de pagamento.",
+          idempotencyKey: `legacy:pagamento:${pagamento.id}:credito`
+        });
+        saldoPedido = saldoPedido.sub(valorAplicado);
+      }
+
+      if (valorPago.gt(valorAplicado)) {
+        await createCarteiraMovimento(tx, {
+          clienteId,
+          pedidoId: pedido.id,
+          pagamentoId: pagamento.id,
+          tipo: "SOBRA_PAGAMENTO",
+          natureza: "CREDITO",
+          valor: valorPago.sub(valorAplicado),
+          origem: "SISTEMA",
+          dataMovimento: dataPagamento,
+          dataCompetencia: dataPagamento,
+          observacao: "Backfill historico de sobra de pagamento.",
+          idempotencyKey: `legacy:pagamento:${pagamento.id}:sobra`
+        });
+      }
+    }
+  }
+}
 
 export async function listClientes(query?: string) {
   return prisma.atacadoCliente.findMany({
@@ -27,6 +244,38 @@ export async function listClientes(query?: string) {
     orderBy: { updatedAt: "desc" },
     take: 100
   });
+}
+
+export async function listClientesPage(filters: { query?: string; page?: number; take?: number } = {}) {
+  const rawPage = Number(filters.page ?? 1);
+  const rawTake = Number(filters.take ?? 20);
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.trunc(rawPage)) : 1;
+  const take = Number.isFinite(rawTake) ? Math.min(50, Math.max(1, Math.trunc(rawTake))) : 20;
+  const skip = (page - 1) * take;
+
+  const clientes = await prisma.atacadoCliente.findMany({
+    where: filters.query
+      ? {
+          OR: [
+            { nome: { contains: filters.query, mode: "insensitive" } },
+            { cidade: { contains: filters.query, mode: "insensitive" } },
+            { telefone: { contains: filters.query, mode: "insensitive" } },
+            { documento: { contains: filters.query, mode: "insensitive" } }
+          ]
+        }
+      : undefined,
+    orderBy: { updatedAt: "desc" },
+    skip,
+    take: take + 1
+  });
+
+  const hasMore = clientes.length > take;
+  return {
+    clientes: hasMore ? clientes.slice(0, take) : clientes,
+    hasMore,
+    page,
+    take
+  };
 }
 
 export function createCliente(data: ClienteInput) {
@@ -58,24 +307,106 @@ export async function listProdutos(query?: string) {
 }
 
 export function createProduto(data: ProdutoInput) {
-  return prisma.atacadoProduto.create({
-    data: {
-      ...data,
-      precoPorCaixa: new Prisma.Decimal(data.precoPorCaixa),
-      permiteEditarPrecoPedido: data.permiteEditarPrecoPedido
-    }
-  });
+  return prisma.$queryRaw<{
+    id: string;
+    referencia: string | null;
+    codigo: string | null;
+    codigoBarras: string | null;
+    nome: string;
+    categoria: string | null;
+    cor: string | null;
+    grade: string | null;
+    numeracao: string | null;
+    embalagem: string | null;
+    quantidadePorCaixa: number;
+    precoPorCaixa: Prisma.Decimal;
+    permiteEditarPrecoPedido: boolean;
+    status: string;
+    observacoes: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }[]>`
+    INSERT INTO "atacado_produtos" (
+      "id",
+      "referencia",
+      "codigo",
+      "codigoBarras",
+      "nome",
+      "categoria",
+      "cor",
+      "grade",
+      "numeracao",
+      "embalagem",
+      "quantidadePorCaixa",
+      "precoPorCaixa",
+      "permiteEditarPrecoPedido",
+      "status",
+      "observacoes",
+      "createdAt",
+      "updatedAt"
+    ) VALUES (
+      CAST(${randomUUID()} AS uuid),
+      ${data.referencia ?? null},
+      ${data.codigo ?? null},
+      ${data.codigoBarras ?? null},
+      ${data.nome},
+      ${data.categoria ?? null},
+      ${data.cor ?? null},
+      ${data.grade ?? null},
+      ${data.numeracao ?? null},
+      ${data.embalagem ?? null},
+      ${data.quantidadePorCaixa},
+      ${new Prisma.Decimal(data.precoPorCaixa)},
+      ${data.permiteEditarPrecoPedido},
+      CAST(${data.status} AS "AtacadoProdutoStatus"),
+      ${data.observacoes ?? null},
+      NOW(),
+      NOW()
+    )
+    RETURNING *;
+  `.then((rows) => rows[0]);
 }
 
 export function updateProduto(id: string, data: ProdutoInput) {
-  return prisma.atacadoProduto.update({
-    where: { id },
-    data: {
-      ...data,
-      precoPorCaixa: new Prisma.Decimal(data.precoPorCaixa),
-      permiteEditarPrecoPedido: data.permiteEditarPrecoPedido
-    }
-  });
+  return prisma.$queryRaw<{
+    id: string;
+    referencia: string | null;
+    codigo: string | null;
+    codigoBarras: string | null;
+    nome: string;
+    categoria: string | null;
+    cor: string | null;
+    grade: string | null;
+    numeracao: string | null;
+    embalagem: string | null;
+    quantidadePorCaixa: number;
+    precoPorCaixa: Prisma.Decimal;
+    permiteEditarPrecoPedido: boolean;
+    status: string;
+    observacoes: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }[]>`
+    UPDATE "atacado_produtos"
+    SET
+      "referencia" = ${data.referencia ?? null},
+      "codigo" = ${data.codigo ?? null},
+      "codigoBarras" = ${data.codigoBarras ?? null},
+      "nome" = ${data.nome},
+      "categoria" = ${data.categoria ?? null},
+      "cor" = ${data.cor ?? null},
+      "grade" = ${data.grade ?? null},
+      "numeracao" = ${data.numeracao ?? null},
+      "embalagem" = ${data.embalagem ?? null},
+      "quantidadePorCaixa" = ${data.quantidadePorCaixa},
+      "precoPorCaixa" = ${new Prisma.Decimal(data.precoPorCaixa)},
+      "permiteEditarPrecoPedido" = ${data.permiteEditarPrecoPedido},
+      "status" = CAST(${data.status} AS "AtacadoProdutoStatus"),
+      "observacoes" = ${data.observacoes ?? null},
+      "updatedAt" = NOW()
+    WHERE "id" = CAST(${id} AS uuid)
+    RETURNING *;
+  `.then((rows) => rows[0]);
 }
 
 export async function addProdutoFoto(id: string, file: File, principal = false) {
@@ -208,13 +539,84 @@ export async function createPedido(data: PedidoInput, userId: string, options: {
   });
 }
 
-export async function updatePedidoStatus(id: string, data: StatusPedidoInput, userId: string, options: { isMaster?: boolean } = {}) {
-  return prisma.$transaction(async (tx) => {
-    const current = await tx.atacadoPedido.findUniqueOrThrow({ where: { id }, select: { status: true } });
-    if (["EM_ENTREGA", "ENTREGUE", "CANCELADO"].includes(current.status) && !options.isMaster) {
-      throw new Error("Somente Administrador Master pode alterar pedido em rota ou finalizado.");
+async function updatePedidoStatusTx(
+  tx: Prisma.TransactionClient,
+  id: string,
+  data: StatusPedidoInput,
+  userId: string,
+  options: { isMaster?: boolean; createOpenMovement?: boolean } = {}
+) {
+  const current = await tx.atacadoPedido.findUniqueOrThrow({
+    where: { id },
+    select: {
+      status: true,
+      clienteId: true,
+      valorTotal: true
     }
-    const pedido = await tx.atacadoPedido.update({ where: { id }, data: { status: data.status } });
+  });
+
+  if (["EM_ENTREGA", "ENTREGUE", "CANCELADO"].includes(current.status) && !options.isMaster) {
+    throw new Error("Somente Administrador Master pode alterar pedido em rota ou finalizado.");
+  }
+
+  const pedido = current.status === data.status
+    ? await tx.atacadoPedido.findUniqueOrThrow({ where: { id } })
+    : await tx.atacadoPedido.update({ where: { id }, data: { status: data.status } });
+
+  if (data.status === "AGUARDANDO_PAGAMENTO" && options.createOpenMovement) {
+    const existingOpening = await tx.atacadoCarteiraMovimento.findFirst({
+      where: {
+        pedidoId: id,
+        tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO"
+      },
+      select: { id: true }
+    });
+
+    if (!existingOpening) {
+      await createCarteiraMovimento(tx, {
+        clienteId: current.clienteId,
+        pedidoId: id,
+        tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO",
+        natureza: "DEBITO",
+        valor: current.valorTotal,
+        origem: "PEDIDO",
+        criadoPorUsuarioId: userId,
+        observacao: data.observacao ?? "Pedido liberado sem pagamento.",
+        dataCompetencia: new Date(),
+        dataMovimento: new Date(),
+        idempotencyKey: `pedido:${id}:abertura`
+      });
+    }
+  }
+
+  if (data.status === "CANCELADO") {
+    const openingMovement = await tx.atacadoCarteiraMovimento.findFirst({
+      where: {
+        pedidoId: id,
+        tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO"
+      },
+      orderBy: { createdAt: "asc" },
+      select: { valor: true }
+    });
+
+    if (openingMovement) {
+      await createCarteiraMovimento(tx, {
+        clienteId: current.clienteId,
+        pedidoId: id,
+        tipo: "CANCELAMENTO_PEDIDO",
+        natureza: "CREDITO",
+        valor: openingMovement.valor,
+        origem: "SISTEMA",
+        criadoPorUsuarioId: userId,
+        observacao: data.observacao ?? "Pedido cancelado e saldo revertido.",
+        dataCompetencia: new Date(),
+        dataMovimento: new Date(),
+        idempotencyKey: `pedido:${id}:cancelamento`
+      });
+    }
+  }
+
+  if (current.status !== data.status) {
     await tx.atacadoHistoricoStatus.create({
       data: {
         pedidoId: id,
@@ -224,8 +626,13 @@ export async function updatePedidoStatus(id: string, data: StatusPedidoInput, us
         observacao: data.observacao
       }
     });
-    return pedido;
-  });
+  }
+
+  return pedido;
+}
+
+export async function updatePedidoStatus(id: string, data: StatusPedidoInput, userId: string, options: { isMaster?: boolean; createOpenMovement?: boolean } = {}) {
+  return prisma.$transaction(async (tx) => updatePedidoStatusTx(tx, id, data, userId, options));
 }
 
 export async function addPedidoAnexo(id: string, file: File, tipo: AtacadoAnexoTipo, userId: string) {
@@ -245,9 +652,18 @@ export async function addPedidoAnexo(id: string, file: File, tipo: AtacadoAnexoT
   });
 }
 
-export async function registerPagamento(id: string, data: PagamentoInput, userId: string, file?: File) {
-  const uploaded = file ? await uploadImage(file, cloudinaryFolder("pagamentos")) : null;
-  const pagamento = await prisma.atacadoPagamento.create({
+async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, data: PagamentoInput, userId: string, uploaded: Awaited<ReturnType<typeof uploadImage>> | null) {
+  const pedido = await tx.atacadoPedido.findUniqueOrThrow({
+    where: { id },
+    select: {
+      id: true,
+      clienteId: true,
+      valorTotal: true,
+      status: true
+    }
+  });
+
+  const pagamento = await tx.atacadoPagamento.create({
     data: {
       pedidoId: id,
       registradoPorId: userId,
@@ -259,13 +675,112 @@ export async function registerPagamento(id: string, data: PagamentoInput, userId
     }
   });
 
-  if (data.status === "PAGO") {
-    await updatePedidoStatus(id, { status: "PAGO", observacao: "Pagamento confirmado" }, userId);
-  } else if (data.status === "PARCIAL") {
-    await updatePedidoStatus(id, { status: "AGUARDANDO_PAGAMENTO", observacao: "Pagamento parcial registrado" }, userId);
+  const valorPago = new Prisma.Decimal(data.valorPago);
+
+  if (data.status !== "PENDENTE" && valorPago.gt(0)) {
+    const openingMovement = await tx.atacadoCarteiraMovimento.findFirst({
+      where: {
+        pedidoId: id,
+        tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO"
+      },
+      select: { id: true }
+    });
+
+    if (openingMovement) {
+      const saldoPedidoAtual = await sumMovimentosPedido(tx, id);
+      const saldoDevedor = saldoPedidoAtual.isNegative() ? saldoPedidoAtual.abs() : new Prisma.Decimal(0);
+
+      if (saldoDevedor.gt(0)) {
+        const valorAplicadoNaDivida = valorPago.gte(saldoDevedor) ? saldoDevedor : valorPago;
+        const tipoAplicacao = valorAplicadoNaDivida.eq(saldoDevedor) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
+
+        await createCarteiraMovimento(tx, {
+          clienteId: pedido.clienteId,
+          pedidoId: id,
+          pagamentoId: pagamento.id,
+          tipo: tipoAplicacao,
+          natureza: "CREDITO",
+          valor: valorAplicadoNaDivida,
+          origem: "PAGAMENTO",
+          criadoPorUsuarioId: userId,
+          observacao: data.observacao ?? "Pagamento registrado.",
+          dataCompetencia: pagamento.registradoEm,
+          dataMovimento: pagamento.registradoEm,
+          idempotencyKey: `pagamento:${pagamento.id}:principal`
+        });
+
+        if (valorPago.gt(valorAplicadoNaDivida)) {
+          await createCarteiraMovimento(tx, {
+            clienteId: pedido.clienteId,
+            pedidoId: id,
+            pagamentoId: pagamento.id,
+            tipo: "SOBRA_PAGAMENTO",
+            natureza: "CREDITO",
+            valor: valorPago.sub(valorAplicadoNaDivida),
+            origem: "PAGAMENTO",
+            criadoPorUsuarioId: userId,
+            observacao: "Sobra de pagamento registrada como credito futuro.",
+            dataCompetencia: pagamento.registradoEm,
+            dataMovimento: pagamento.registradoEm,
+            idempotencyKey: `pagamento:${pagamento.id}:sobra`
+          });
+        }
+      }
+    } else {
+      const valorAplicado = valorPago.gte(pedido.valorTotal) ? pedido.valorTotal : valorPago;
+      const tipoAplicacao = valorAplicado.eq(pedido.valorTotal) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
+
+      await createCarteiraMovimento(tx, {
+        clienteId: pedido.clienteId,
+        pedidoId: id,
+        pagamentoId: pagamento.id,
+        tipo: tipoAplicacao,
+        natureza: "CREDITO",
+        valor: valorAplicado,
+        origem: "PAGAMENTO",
+        criadoPorUsuarioId: userId,
+        observacao: data.observacao ?? "Pagamento registrado.",
+        dataCompetencia: pagamento.registradoEm,
+        dataMovimento: pagamento.registradoEm,
+        idempotencyKey: `pagamento:${pagamento.id}:principal`
+      });
+
+      if (valorPago.gt(valorAplicado)) {
+        await createCarteiraMovimento(tx, {
+          clienteId: pedido.clienteId,
+          pedidoId: id,
+          pagamentoId: pagamento.id,
+          tipo: "SOBRA_PAGAMENTO",
+          natureza: "CREDITO",
+          valor: valorPago.sub(valorAplicado),
+          origem: "PAGAMENTO",
+          criadoPorUsuarioId: userId,
+          observacao: "Pagamento excedente registrado como credito futuro.",
+          dataCompetencia: pagamento.registradoEm,
+          dataMovimento: pagamento.registradoEm,
+          idempotencyKey: `pagamento:${pagamento.id}:sobra`
+        });
+      }
+    }
+
+    const saldoDepois = await sumMovimentosPedido(tx, id);
+    const statusFinal: AtacadoPagamentoStatus = saldoDepois.isNegative() ? "PARCIAL" : "PAGO";
+    if (pagamento.status !== statusFinal) {
+      await tx.atacadoPagamento.update({
+        where: { id: pagamento.id },
+        data: { status: statusFinal }
+      });
+    }
+
+    await updatePedidoStatusTx(tx, id, { status: saldoDepois.isNegative() ? "AGUARDANDO_PAGAMENTO" : "PAGO", observacao: saldoDepois.isNegative() ? "Pagamento parcial registrado" : "Pagamento confirmado" }, userId, { isMaster: true, createOpenMovement: false });
   }
 
   return pagamento;
+}
+
+export async function registerPagamento(id: string, data: PagamentoInput, userId: string, file?: File) {
+  const uploaded = file ? await uploadImage(file, cloudinaryFolder("pagamentos")) : null;
+  return prisma.$transaction(async (tx) => registerPagamentoTx(tx, id, data, userId, uploaded));
 }
 
 export function createEntrega(id: string, data: EntregaInput, userId: string) {
@@ -467,6 +982,315 @@ export async function concluirEntrega(id: string, data: ConcluirEntregaInput, us
 
     return entrega;
   });
+}
+
+type CarteiraMovimentoFilters = {
+  clienteId: string;
+  dataInicio?: Date;
+  dataFim?: Date;
+  tipo?: CarteiraMovimentoTipo;
+  pedidoId?: string;
+};
+
+async function listMovimentosCarteira(tx: Prisma.TransactionClient, filters: CarteiraMovimentoFilters) {
+  const dataMovimento = filters.dataInicio || filters.dataFim
+    ? {
+        ...(filters.dataInicio ? { gte: filters.dataInicio } : {}),
+        ...(filters.dataFim ? { lte: filters.dataFim } : {})
+      }
+    : undefined;
+
+  return tx.atacadoCarteiraMovimento.findMany({
+    where: {
+      clienteId: filters.clienteId,
+      tipo: filters.tipo,
+      pedidoId: filters.pedidoId,
+      dataMovimento
+    },
+    include: {
+      pedido: { select: { id: true, numero: true, valorTotal: true, status: true } },
+      pagamento: { select: { id: true, valorPago: true, status: true, registradoEm: true } },
+      criadoPorUsuario: { select: { id: true, name: true, email: true } }
+    },
+    orderBy: [{ dataMovimento: "desc" }, { createdAt: "desc" }]
+  });
+}
+
+export async function getCarteiraCliente(clienteId: string) {
+  return prisma.$transaction(async (tx) => {
+    await backfillCarteiraClienteHistorica(tx, clienteId);
+    const cliente = await tx.atacadoCliente.findUniqueOrThrow({
+      where: { id: clienteId },
+      include: { carteira: true }
+    });
+
+    const carteira = cliente.carteira ?? await tx.atacadoCarteiraCliente.upsert({
+      where: { clienteId },
+      update: {},
+      create: { clienteId }
+    });
+
+    return { cliente, carteira };
+  });
+}
+
+export async function getSaldoCliente(clienteId: string) {
+  const { carteira } = await getCarteiraCliente(clienteId);
+  return {
+    clienteId,
+    saldoAtual: carteira.saldoAtual,
+    saldoBloqueado: carteira.saldoBloqueado,
+    saldoDevedor: carteira.saldoAtual.isNegative() ? carteira.saldoAtual.abs() : new Prisma.Decimal(0),
+    creditoDisponivel: carteira.saldoAtual.isPositive() ? carteira.saldoAtual : new Prisma.Decimal(0)
+  };
+}
+
+export async function getExtratoCarteiraCliente(clienteId: string, filters: Omit<CarteiraMovimentoFilters, "clienteId"> = {}) {
+  return prisma.$transaction(async (tx) => {
+    await backfillCarteiraClienteHistorica(tx, clienteId);
+    const cliente = await tx.atacadoCliente.findUniqueOrThrow({
+      where: { id: clienteId },
+      select: { id: true, nome: true, documento: true, status: true }
+    });
+    const carteira = await ensureCarteiraCliente(tx, clienteId);
+    const movimentos = await listMovimentosCarteira(tx, {
+      clienteId,
+      dataInicio: filters.dataInicio,
+      dataFim: filters.dataFim,
+      tipo: filters.tipo,
+      pedidoId: filters.pedidoId
+    });
+
+    return {
+      cliente,
+      saldoAtual: carteira.saldoAtual,
+      saldoBloqueado: carteira.saldoBloqueado,
+      periodo: {
+        dataInicio: filters.dataInicio ?? null,
+        dataFim: filters.dataFim ?? null
+      },
+      movimentos
+    };
+  });
+}
+
+async function createMovimentoManual(
+  clienteId: string,
+  data: {
+    valor: Prisma.Decimal.Value;
+    tipo: CarteiraMovimentoTipo;
+    natureza: CarteiraMovimentoNatureza;
+    observacao: string;
+    dataCompetencia?: Date;
+    criadoPorUsuarioId: string;
+    pedidoId?: string | null;
+    origem?: CarteiraMovimentoOrigem;
+  }
+) {
+  return prisma.$transaction(async (tx) => createCarteiraMovimento(tx, {
+    clienteId,
+    pedidoId: data.pedidoId ?? null,
+    tipo: data.tipo,
+    natureza: data.natureza,
+    valor: data.valor,
+    origem: data.origem ?? "MANUAL",
+    criadoPorUsuarioId: data.criadoPorUsuarioId,
+    observacao: data.observacao,
+    dataMovimento: data.dataCompetencia ?? new Date(),
+    dataCompetencia: data.dataCompetencia ?? new Date(),
+    idempotencyKey: undefined
+  }));
+}
+
+export function criarCreditoManual(clienteId: string, data: { valor: Prisma.Decimal.Value; observacao: string; dataCompetencia?: Date; criadoPorUsuarioId: string }) {
+  return createMovimentoManual(clienteId, {
+    valor: data.valor,
+    tipo: "CREDITO_MANUAL",
+    natureza: "CREDITO",
+    observacao: data.observacao,
+    dataCompetencia: data.dataCompetencia,
+    criadoPorUsuarioId: data.criadoPorUsuarioId,
+    origem: "MANUAL"
+  });
+}
+
+export function criarDebitoManual(clienteId: string, data: { valor: Prisma.Decimal.Value; observacao: string; dataCompetencia?: Date; criadoPorUsuarioId: string }) {
+  return createMovimentoManual(clienteId, {
+    valor: data.valor,
+    tipo: "DEBITO_MANUAL",
+    natureza: "DEBITO",
+    observacao: data.observacao,
+    dataCompetencia: data.dataCompetencia,
+    criadoPorUsuarioId: data.criadoPorUsuarioId,
+    origem: "MANUAL"
+  });
+}
+
+export function criarAjusteManual(clienteId: string, data: { valor: Prisma.Decimal.Value; natureza: CarteiraMovimentoNatureza; observacao: string; dataCompetencia?: Date; criadoPorUsuarioId: string }) {
+  return createMovimentoManual(clienteId, {
+    valor: data.valor,
+    tipo: "AJUSTE",
+    natureza: data.natureza,
+    observacao: data.observacao,
+    dataCompetencia: data.dataCompetencia,
+    criadoPorUsuarioId: data.criadoPorUsuarioId,
+    origem: "AJUSTE"
+  });
+}
+
+export async function getRelatorioCarteira(period: { start: Date; end: Date }) {
+  const [clientes, movimentos, carteiras, pedidos] = await Promise.all([
+    prisma.atacadoCliente.findMany({
+      select: { id: true, nome: true, documento: true, status: true }
+    }),
+    prisma.atacadoCarteiraMovimento.findMany({
+      where: { dataMovimento: { gte: period.start, lte: period.end } },
+      select: {
+        clienteId: true,
+        pedidoId: true,
+        tipo: true,
+        natureza: true,
+        valor: true,
+        dataMovimento: true,
+        dataCompetencia: true
+      }
+    }),
+    prisma.atacadoCarteiraCliente.findMany({
+      select: { clienteId: true, saldoAtual: true, saldoBloqueado: true }
+    }),
+    prisma.atacadoPedido.findMany({
+      select: {
+        clienteId: true,
+        status: true,
+        valorTotal: true,
+        pagamentos: {
+          select: {
+            valorPago: true,
+            status: true,
+            registradoEm: true
+          }
+        }
+      }
+    })
+  ]);
+
+  const carteiraByCliente = new Map(carteiras.map((item) => [item.clienteId, item]));
+  const movimentosByCliente = new Map<string, typeof movimentos>();
+  for (const movimento of movimentos) {
+    const current = movimentosByCliente.get(movimento.clienteId) ?? [];
+    current.push(movimento);
+    movimentosByCliente.set(movimento.clienteId, current);
+  }
+
+  const pedidosByCliente = new Map<string, typeof pedidos>();
+  for (const pedido of pedidos) {
+    const current = pedidosByCliente.get(pedido.clienteId) ?? [];
+    current.push(pedido);
+    pedidosByCliente.set(pedido.clienteId, current);
+  }
+
+  const clientesResumo = clientes.map((cliente) => {
+    const carteira = carteiraByCliente.get(cliente.id);
+    const clientPedidos = pedidosByCliente.get(cliente.id) ?? [];
+    const clientMovimentos = movimentosByCliente.get(cliente.id) ?? [];
+    const hasMovimentos = clientMovimentos.length > 0;
+    const saldoLegacy = clientPedidos.reduce((sum, pedido) => {
+      if (pedido.status === "CANCELADO" || pedido.status === "RASCUNHO") {
+        return sum;
+      }
+      const totalPagamentos = pedido.pagamentos.reduce((paymentSum, pagamento) => {
+        if (pagamento.status === "PENDENTE") return paymentSum;
+        return paymentSum.add(toDecimal(pagamento.valorPago));
+      }, new Prisma.Decimal(0));
+      return sum.add(totalPagamentos.sub(toDecimal(pedido.valorTotal)));
+    }, new Prisma.Decimal(0));
+    const saldoAtual = hasMovimentos ? (carteira?.saldoAtual ?? saldoLegacy) : saldoLegacy;
+    const totalPagoMovimentos = clientMovimentos
+      .filter((movimento) => ["PAGAMENTO_PARCIAL", "PAGAMENTO_TOTAL"].includes(movimento.tipo))
+      .reduce((sum, movimento) => sum.add(movimento.valor), new Prisma.Decimal(0));
+    const totalSobraMovimentos = clientMovimentos
+      .filter((movimento) => movimento.tipo === "SOBRA_PAGAMENTO")
+      .reduce((sum, movimento) => sum.add(movimento.valor), new Prisma.Decimal(0));
+    const totalAjustesMovimentos = clientMovimentos
+      .filter((movimento) => ["CREDITO_MANUAL", "DEBITO_MANUAL", "AJUSTE"].includes(movimento.tipo))
+      .reduce((sum, movimento) => sum.add(movimento.valor), new Prisma.Decimal(0));
+
+    const totalPagoLegacyPeriodo = clientPedidos.reduce((sum, pedido) => {
+      return sum.add(pedido.pagamentos.reduce((paymentSum, pagamento) => {
+        if (pagamento.status === "PENDENTE") return paymentSum;
+        if (pagamento.registradoEm < period.start || pagamento.registradoEm > period.end) return paymentSum;
+        return paymentSum.add(toDecimal(pagamento.valorPago));
+      }, new Prisma.Decimal(0)));
+    }, new Prisma.Decimal(0));
+
+    const totalSobraLegacyPeriodo = clientPedidos.reduce((sum, pedido) => {
+      const totalPagamentosPeriodo = pedido.pagamentos.reduce((paymentSum, pagamento) => {
+        if (pagamento.status === "PENDENTE") return paymentSum;
+        if (pagamento.registradoEm < period.start || pagamento.registradoEm > period.end) return paymentSum;
+        return paymentSum.add(toDecimal(pagamento.valorPago));
+      }, new Prisma.Decimal(0));
+      const sobra = totalPagamentosPeriodo.sub(toDecimal(pedido.valorTotal));
+      return sobra.gt(0) ? sum.add(sobra) : sum;
+    }, new Prisma.Decimal(0));
+    const totalPagoPeriodo = hasMovimentos ? totalPagoMovimentos : totalPagoLegacyPeriodo;
+    const totalSobraPeriodo = hasMovimentos ? totalSobraMovimentos : totalSobraLegacyPeriodo;
+    const totalAjustesPeriodo = hasMovimentos ? totalAjustesMovimentos : new Prisma.Decimal(0);
+
+    return {
+      cliente,
+      saldoAtual,
+      saldoDevedor: saldoAtual.isNegative() ? saldoAtual.abs() : new Prisma.Decimal(0),
+      creditoDisponivel: saldoAtual.isPositive() ? saldoAtual : new Prisma.Decimal(0),
+      totalPagoPeriodo,
+      totalSobraPeriodo,
+      totalAjustesPeriodo
+    };
+  });
+
+  const resumoMensalPorCliente = clientes.map((cliente) => {
+    const clientMovimentos = movimentosByCliente.get(cliente.id) ?? [];
+    const meses = new Map<string, { mes: string; credito: Prisma.Decimal; debito: Prisma.Decimal; saldo: Prisma.Decimal }>();
+
+    for (const movimento of clientMovimentos) {
+      const mes = movimento.dataMovimento.toISOString().slice(0, 7);
+      const current = meses.get(mes) ?? { mes, credito: new Prisma.Decimal(0), debito: new Prisma.Decimal(0), saldo: new Prisma.Decimal(0) };
+      if (movimento.natureza === "CREDITO") {
+        current.credito = current.credito.add(movimento.valor);
+        current.saldo = current.saldo.add(movimento.valor);
+      } else if (movimento.natureza === "DEBITO") {
+        current.debito = current.debito.add(movimento.valor);
+        current.saldo = current.saldo.sub(movimento.valor);
+      }
+      meses.set(mes, current);
+    }
+
+    return {
+      cliente,
+      meses: [...meses.values()].sort((left, right) => left.mes.localeCompare(right.mes))
+    };
+  });
+
+  const rankingSaldoDevedor = [...clientesResumo]
+    .sort((left, right) => right.saldoDevedor.comparedTo(left.saldoDevedor))
+    .slice(0, 20);
+  const rankingCreditoDisponivel = [...clientesResumo]
+    .sort((left, right) => right.creditoDisponivel.comparedTo(left.creditoDisponivel))
+    .slice(0, 20);
+
+  return {
+    periodo: period,
+    clientes: clientesResumo,
+    resumoMensalPorCliente,
+    rankingSaldoDevedor,
+    rankingCreditoDisponivel,
+    totaisPeriodo: {
+      totalPago: clientesResumo.reduce((sum, item) => sum.add(item.totalPagoPeriodo), new Prisma.Decimal(0)),
+      totalSobra: clientesResumo.reduce((sum, item) => sum.add(item.totalSobraPeriodo), new Prisma.Decimal(0)),
+      totalAjustes: clientesResumo.reduce((sum, item) => sum.add(item.totalAjustesPeriodo), new Prisma.Decimal(0)),
+      totalCreditoDisponivel: clientesResumo.reduce((sum, item) => sum.add(item.creditoDisponivel), new Prisma.Decimal(0)),
+      totalSaldoDevedor: clientesResumo.reduce((sum, item) => sum.add(item.saldoDevedor), new Prisma.Decimal(0))
+    }
+  };
 }
 
 export async function getAtacadoDashboard() {

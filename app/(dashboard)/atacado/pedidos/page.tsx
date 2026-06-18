@@ -25,7 +25,6 @@ export default async function AtacadoPedidosPage({ searchParams }: { searchParam
   const user = session?.user ?? null;
   const isMaster = user?.roles.includes("master") ?? false;
   const canCreatePedidos = hasPermission(user, "atacado.pedidos.create");
-  const canUpdatePedidos = hasPermission(user, "atacado.pedidos.update");
   const clienteOptions = clientes.map((cliente) => ({ id: cliente.id, nome: cliente.nome }));
   const produtoOptions = produtos.map((produto) => ({
     id: produto.id,
@@ -104,7 +103,7 @@ export default async function AtacadoPedidosPage({ searchParams }: { searchParam
       <Card>
         <CardHeader className="border-b bg-muted/20"><CardTitle>Pedidos</CardTitle></CardHeader>
         <CardContent>
-          <AtacadoPedidosTable pedidos={pedidoRows} canUpdatePedidos={canUpdatePedidos} isMaster={isMaster} />
+          <AtacadoPedidosTable pedidos={pedidoRows} isMaster={isMaster} />
         </CardContent>
       </Card>
     </div>

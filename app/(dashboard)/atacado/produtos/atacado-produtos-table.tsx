@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { updateProdutoAction } from "@/features/atacado/actions";
 import { AtacadoStatusBadge } from "@/features/atacado/status";
 import { currency } from "@/lib/utils";
 
@@ -18,6 +18,8 @@ export type AtacadoProdutoRow = {
   categoria: string | null;
   cor: string | null;
   grade: string | null;
+  numeracao: string | null;
+  embalagem: string | null;
   quantidadePorCaixa: number;
   precoPorCaixa: number;
   permiteEditarPrecoPedido: boolean;
@@ -33,15 +35,15 @@ export function AtacadoProdutosTable({ produtos, canManage }: { produtos: Atacad
     <>
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead>Foto</TableHead>
-            <TableHead>Referencia</TableHead>
-            <TableHead>Codigo</TableHead>
-            <TableHead>Codigo de barras</TableHead>
-            <TableHead>Produto</TableHead>
-            <TableHead>Categoria</TableHead>
-            <TableHead>Cor</TableHead>
+            <TableRow>
+              <TableHead>Foto</TableHead>
+              <TableHead>Referencia</TableHead>
+              <TableHead>Produto</TableHead>
+              <TableHead>Categoria</TableHead>
+              <TableHead>Cor</TableHead>
             <TableHead>Grade</TableHead>
+            <TableHead>Numeração</TableHead>
+            <TableHead>Embalagem</TableHead>
             <TableHead>Caixa</TableHead>
             <TableHead>Preco livre</TableHead>
             <TableHead>Status</TableHead>
@@ -60,12 +62,12 @@ export function AtacadoProdutosTable({ produtos, canManage }: { produtos: Atacad
                 )}
               </TableCell>
               <TableCell>{produto.referencia ?? "-"}</TableCell>
-              <TableCell>{produto.codigo ?? "-"}</TableCell>
-              <TableCell>{produto.codigoBarras ?? "-"}</TableCell>
               <TableCell className="font-semibold">{produto.nome}</TableCell>
               <TableCell>{produto.categoria ?? "-"}</TableCell>
               <TableCell>{produto.cor ?? "-"}</TableCell>
-              <TableCell>{produto.grade ?? "-"}</TableCell>
+              <TableCell>{labelGrade(produto.grade)}</TableCell>
+              <TableCell>{produto.numeracao ?? "-"}</TableCell>
+              <TableCell>{labelEmbalagem(produto.embalagem)}</TableCell>
               <TableCell>{produto.quantidadePorCaixa} pares - {currency(produto.precoPorCaixa)}</TableCell>
               <TableCell>{produto.permiteEditarPrecoPedido ? "Sim" : "Nao"}</TableCell>
               <TableCell><AtacadoStatusBadge status={produto.status} /></TableCell>
@@ -84,29 +86,88 @@ export function AtacadoProdutosTable({ produtos, canManage }: { produtos: Atacad
 }
 
 function ProdutoEditModal({ produto, onClose }: { produto: AtacadoProdutoRow; onClose: () => void }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError(null);
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    const payload = {
+      referencia: textOrNull(formData, "referencia"),
+      codigo: textOrNull(formData, "codigo"),
+      codigoBarras: textOrNull(formData, "codigoBarras"),
+      nome: textOrNull(formData, "nome"),
+      categoria: textOrNull(formData, "categoria"),
+      cor: textOrNull(formData, "cor"),
+      grade: textOrNull(formData, "grade"),
+      numeracao: textOrNull(formData, "numeracao"),
+      embalagem: textOrNull(formData, "embalagem"),
+      quantidadePorCaixa: textOrNull(formData, "quantidadePorCaixa"),
+      precoPorCaixa: normalizeMoney(textOrNull(formData, "precoPorCaixa")),
+      permiteEditarPrecoPedido: formData.get("permiteEditarPrecoPedido") === "on",
+      status: textOrNull(formData, "status"),
+      observacoes: textOrNull(formData, "observacoes")
+    };
+
+    try {
+      const updateResponse = await fetch(`/api/atacado/produtos/${produto.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!updateResponse.ok) {
+        const payloadError = await updateResponse.json().catch(() => null);
+        throw new Error(payloadError?.error?.message ?? "Nao foi possivel salvar o produto.");
+      }
+
+      const photoFile = formData.get("foto");
+      if (photoFile instanceof File && photoFile.size > 0) {
+        const photoData = new FormData();
+        photoData.set("file", photoFile);
+        photoData.set("principal", "true");
+
+        const photoResponse = await fetch(`/api/atacado/produtos/${produto.id}/fotos`, {
+          method: "POST",
+          body: photoData
+        });
+
+        if (!photoResponse.ok) {
+          const payloadError = await photoResponse.json().catch(() => null);
+          throw new Error(payloadError?.error?.message ?? "Produto salvo, mas nao foi possivel atualizar a foto.");
+        }
+      }
+
+      onClose();
+      router.refresh();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Nao foi possivel salvar o produto.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border bg-background shadow-lg">
         <div className="flex items-start justify-between gap-4 border-b p-4">
           <div>
-            <div className="text-sm text-muted-foreground">Editar produto</div>
-            <h2 className="text-xl font-semibold">{produto.nome}</h2>
-          </div>
+          <div className="text-sm text-muted-foreground">Editar produto</div>
+          <h2 className="text-xl font-semibold">{produto.nome}</h2>
+        </div>
           <Button type="button" variant="outline" onClick={onClose}>Fechar</Button>
         </div>
-        <form action={updateProdutoAction} className="grid gap-4 p-4 md:grid-cols-5">
+        <form onSubmit={handleSubmit} className="grid gap-4 p-4 md:grid-cols-5">
           <input type="hidden" name="produtoId" value={produto.id} />
           <div className="space-y-2">
             <Label>Referencia</Label>
             <Input name="referencia" defaultValue={produto.referencia ?? ""} />
-          </div>
-          <div className="space-y-2">
-            <Label>Codigo</Label>
-            <Input name="codigo" defaultValue={produto.codigo ?? ""} />
-          </div>
-          <div className="space-y-2">
-            <Label>Codigo de barras</Label>
-            <Input name="codigoBarras" inputMode="numeric" defaultValue={produto.codigoBarras ?? ""} />
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Nome</Label>
@@ -129,7 +190,26 @@ function ProdutoEditModal({ produto, onClose }: { produto: AtacadoProdutoRow; on
           </div>
           <div className="space-y-2">
             <Label>Grade</Label>
-            <Input name="grade" defaultValue={produto.grade ?? ""} />
+            <select name="grade" className="form-select" defaultValue={produto.grade ?? ""}>
+              <option value="">Selecione</option>
+              <option value="ALTA">Alta</option>
+              <option value="BAIXA">Baixa</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Numeracao</Label>
+            <select name="numeracao" className="form-select" defaultValue={produto.numeracao ?? ""}>
+              <option value="">Selecione</option>
+              {shoeSizes.map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Embalagem</Label>
+            <select name="embalagem" className="form-select" defaultValue={produto.embalagem ?? ""}>
+              <option value="">Selecione</option>
+              <option value="SACO">Saco</option>
+              <option value="CAIXA">Caixa</option>
+            </select>
           </div>
           <div className="space-y-2">
             <Label>Pares por caixa</Label>
@@ -137,9 +217,9 @@ function ProdutoEditModal({ produto, onClose }: { produto: AtacadoProdutoRow; on
           </div>
           <div className="space-y-2">
             <Label>Preco caixa</Label>
-            <Input name="precoPorCaixa" type="number" min={0} step="0.01" defaultValue={produto.precoPorCaixa} required />
+            <Input name="precoPorCaixa" type="text" inputMode="decimal" defaultValue={produto.precoPorCaixa.toString()} required />
           </div>
-          <label className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium md:col-span-2">
+          <label className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium md:col-span-3">
             <input type="checkbox" name="permiteEditarPrecoPedido" defaultChecked={produto.permiteEditarPrecoPedido} className="h-4 w-4 accent-primary" />
             Liberar preco/desconto no pedido sem senha
           </label>
@@ -157,11 +237,38 @@ function ProdutoEditModal({ produto, onClose }: { produto: AtacadoProdutoRow; on
             <p className="text-xs text-muted-foreground">Ao selecionar outra imagem, ela passa a ser a foto principal.</p>
           </div>
           <div className="flex justify-end gap-2 md:col-span-5">
-            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button type="submit">Salvar produto</Button>
+            <Button type="button" variant="outline" onClick={onClose} disabled={pending}>Cancelar</Button>
+            <Button type="submit" loading={pending}>Salvar produto</Button>
           </div>
+          {error ? <div className="md:col-span-5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">{error}</div> : null}
         </form>
       </div>
     </div>
   );
 }
+
+function textOrNull(formData: FormData, key: string) {
+  const value = formData.get(key);
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+}
+
+function normalizeMoney(value: string | null) {
+  if (!value) return "0";
+  return value.replace(/\./g, "").replace(",", ".");
+}
+
+function labelGrade(value: string | null) {
+  if (value === "ALTA") return "Alta";
+  if (value === "BAIXA") return "Baixa";
+  return value ?? "-";
+}
+
+function labelEmbalagem(value: string | null) {
+  if (value === "SACO") return "Saco";
+  if (value === "CAIXA") return "Caixa";
+  return "-";
+}
+
+const shoeSizes = ["33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47"];

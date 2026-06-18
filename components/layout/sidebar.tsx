@@ -23,9 +23,10 @@ export function Sidebar({ user }: { user: { name?: string | null; roles: string[
   }
 
   const visibleItems = sidebarItems.filter((item) => canView(item) || visibleChildren(item).length > 0);
-  const sections: Array<{ id: "visao" | "operacao" | "admin"; label: string }> = [
+  const sections: Array<{ id: "visao" | "operacao" | "atacado" | "admin"; label: string }> = [
     { id: "visao", label: "Visao" },
     { id: "operacao", label: "Operacao" },
+    { id: "atacado", label: "Atacado" },
     { id: "admin", label: "Administracao" }
   ];
   const pathname = usePathname();
@@ -75,7 +76,7 @@ export function Sidebar({ user }: { user: { name?: string | null; roles: string[
           </div>
         ) : null}
       </div>
-      <nav className="max-h-[calc(100vh-4rem)] space-y-3 overflow-y-auto p-3">
+      <nav className="thin-scrollbar max-h-[calc(100vh-4rem)] space-y-3 overflow-y-auto p-3">
         {sections.map((section) => (
           <div key={section.id} className="space-y-1.5">
             {expanded ? <div className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{section.label}</div> : null}

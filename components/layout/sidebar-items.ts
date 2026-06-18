@@ -15,6 +15,7 @@ import {
   Truck,
   Upload,
   Users,
+  Wallet,
   Warehouse
 } from "lucide-react";
 import type { PermissionKey } from "@/lib/auth/permissions";
@@ -24,7 +25,7 @@ export type SidebarItem = {
   label: string;
   icon: ComponentType<{ className?: string }>;
   permission: PermissionKey;
-  section: "visao" | "operacao" | "admin";
+  section: "visao" | "operacao" | "atacado" | "admin";
   children?: SidebarItem[];
 };
 
@@ -37,18 +38,19 @@ export const sidebarItems: SidebarItem[] = [
   { href: "/produtos", label: "Produtos", icon: Boxes, permission: "finance.view", section: "operacao" },
   {
     href: "/atacado",
-    label: "Pedidos Atacado",
+    label: "Atacado",
     icon: Warehouse,
     permission: "atacado.dashboard.view",
-    section: "operacao",
+    section: "atacado",
     children: [
-      { href: "/atacado", label: "Resumo", icon: LayoutDashboard, permission: "atacado.dashboard.view", section: "operacao" },
-      { href: "/atacado/clientes", label: "Clientes", icon: Users, permission: "atacado.clientes.view", section: "operacao" },
-      { href: "/atacado/produtos", label: "Produtos", icon: Boxes, permission: "atacado.produtos.view", section: "operacao" },
-      { href: "/atacado/pedidos", label: "Pedidos", icon: ClipboardList, permission: "atacado.pedidos.view", section: "operacao" },
-      { href: "/atacado/separacao", label: "Separacao", icon: Warehouse, permission: "atacado.separacao.view", section: "operacao" },
-      { href: "/atacado/financeiro", label: "Financeiro", icon: HandCoins, permission: "atacado.financeiro.view", section: "operacao" },
-      { href: "/atacado/entregas", label: "Entregas", icon: Truck, permission: "atacado.entregas.view", section: "operacao" }
+      { href: "/atacado", label: "Resumo", icon: LayoutDashboard, permission: "atacado.dashboard.view", section: "atacado" },
+      { href: "/atacado/clientes", label: "Clientes", icon: Users, permission: "atacado.clientes.view", section: "atacado" },
+      { href: "/atacado/produtos", label: "Produtos", icon: Boxes, permission: "atacado.produtos.view", section: "atacado" },
+      { href: "/atacado/pedidos", label: "Pedidos", icon: ClipboardList, permission: "atacado.pedidos.view", section: "atacado" },
+      { href: "/atacado/separacao", label: "Separacao", icon: Warehouse, permission: "atacado.separacao.view", section: "atacado" },
+      { href: "/atacado/financeiro", label: "Financeiro", icon: HandCoins, permission: "atacado.financeiro.view", section: "atacado" },
+      { href: "/atacado/carteira", label: "Carteira", icon: Wallet, permission: "atacado.financeiro.view", section: "atacado" },
+      { href: "/atacado/entregas", label: "Entregas", icon: Truck, permission: "atacado.entregas.view", section: "atacado" }
     ]
   },
   { href: "/taxas", label: "Taxas", icon: Percent, permission: "fees.view", section: "operacao" },

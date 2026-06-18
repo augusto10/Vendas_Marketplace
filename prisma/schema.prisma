@@ -64,6 +64,7 @@ model User {
   atacadoEntregasMotorista   AtacadoEntrega[]         @relation("AtacadoEntregaMotorista")
   atacadoEntregasRegistradas AtacadoEntrega[]         @relation("AtacadoEntregaRegistradoPor")
   atacadoHistoricoStatus     AtacadoHistoricoStatus[] @relation("AtacadoHistoricoUsuario")
+  atacadoCarteiraMovimentos  AtacadoCarteiraMovimento[] @relation("AtacadoCarteiraMovimentoUsuario")
 
   @@map("users")
 }
@@ -449,6 +450,33 @@ enum AtacadoPagamentoStatus {
   PAGO
 }
 
+enum AtacadoCarteiraMovimentoTipo {
+  PEDIDO_ABERTO_SEM_PAGAMENTO
+  PAGAMENTO_PARCIAL
+  PAGAMENTO_TOTAL
+  CREDITO_MANUAL
+  DEBITO_MANUAL
+  AJUSTE
+  ESTORNO
+  CANCELAMENTO_PEDIDO
+  SOBRA_PAGAMENTO
+}
+
+enum AtacadoCarteiraMovimentoNatureza {
+  CREDITO
+  DEBITO
+  NEUTRA
+}
+
+enum AtacadoCarteiraMovimentoOrigem {
+  PEDIDO
+  PAGAMENTO
+  MANUAL
+  SISTEMA
+  AJUSTE
+  ESTORNO
+}
+
 enum AtacadoEntregaTipo {
   ENTREGA_PROPRIA
   TRANSPORTADORA
@@ -475,6 +503,8 @@ model AtacadoCliente {
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
   pedidos     AtacadoPedido[]
+  carteira    AtacadoCarteiraCliente?
+  movimentosCarteira AtacadoCarteiraMovimento[]
 
   @@index([nome])
   @@index([cidade, estado])
@@ -491,6 +521,8 @@ model AtacadoProduto {
   categoria          String?
   cor                String?
   grade              String?
+  numeracao          String?
+  embalagem          String?
   quantidadePorCaixa Int                  @default(12)
   precoPorCaixa      Decimal              @db.Decimal(14, 2)
   permiteEditarPrecoPedido Boolean        @default(false)
@@ -542,6 +574,7 @@ model AtacadoPedido {
   entregas        AtacadoEntrega[]
   assinaturas     AtacadoAssinatura[]
   historicoStatus AtacadoHistoricoStatus[]
+  movimentosCarteira AtacadoCarteiraMovimento[]
 
   @@index([clienteId])
   @@index([vendedorId])
@@ -599,6 +632,7 @@ model AtacadoPagamento {
   registradoEm        DateTime               @default(now())
   pedido              AtacadoPedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   registradoPor       User?                  @relation("AtacadoPagamentoRegistradoPor", fields: [registradoPorId], references: [id])
+  movimentosCarteira  AtacadoCarteiraMovimento[]
 
   @@index([pedidoId])
   @@index([status])
@@ -660,4 +694,49 @@ model AtacadoHistoricoStatus {
   @@index([pedidoId, createdAt])
   @@index([usuarioId])
   @@map("atacado_historico_status")
+}
+
+model AtacadoCarteiraCliente {
+  id             String   @id @default(uuid()) @db.Uuid
+  clienteId      String   @unique @db.Uuid
+  saldoAtual     Decimal  @default(0) @db.Decimal(14, 2)
+  saldoBloqueado Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  cliente        AtacadoCliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@index([clienteId])
+  @@map("atacado_carteiras_clientes")
+}
+
+model AtacadoCarteiraMovimento {
+  id                 String                             @id @default(uuid()) @db.Uuid
+  clienteId          String                             @db.Uuid
+  pedidoId           String?                            @db.Uuid
+  pagamentoId        String?                            @db.Uuid
+  tipo               AtacadoCarteiraMovimentoTipo
+  natureza           AtacadoCarteiraMovimentoNatureza
+  valor              Decimal                            @db.Decimal(14, 2)
+  saldoAnterior      Decimal                            @db.Decimal(14, 2)
+  saldoPosterior     Decimal                            @db.Decimal(14, 2)
+  dataMovimento      DateTime
+  dataCompetencia    DateTime
+  observacao         String?
+  origem             AtacadoCarteiraMovimentoOrigem
+  criadoPorUsuarioId String?                            @db.Uuid
+  idempotencyKey     String?                            @unique
+  metadata           Json?
+  createdAt          DateTime                           @default(now())
+  updatedAt          DateTime                           @updatedAt
+  cliente            AtacadoCliente                     @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  pedido             AtacadoPedido?                     @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  pagamento          AtacadoPagamento?                  @relation(fields: [pagamentoId], references: [id], onDelete: Cascade)
+  criadoPorUsuario   User?                              @relation("AtacadoCarteiraMovimentoUsuario", fields: [criadoPorUsuarioId], references: [id])
+
+  @@index([clienteId, dataMovimento])
+  @@index([clienteId, dataCompetencia])
+  @@index([pedidoId])
+  @@index([pagamentoId])
+  @@index([tipo])
+  @@map("atacado_carteira_movimentos")
 }

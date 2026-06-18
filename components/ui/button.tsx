@@ -1,10 +1,11 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
+import { Loader2 } from "lucide-react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold tracking-tight transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:translate-y-[1px]",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold tracking-tight transition-all motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
@@ -32,12 +33,31 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  loading?: boolean;
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, loading = false, children, disabled, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+    const isDisabled = disabled || loading;
+    const content = (
+      <>
+        {loading && !asChild ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+        {children}
+      </>
+    );
+
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }), loading && !asChild && "cursor-wait")}
+        ref={ref}
+        aria-busy={loading || undefined}
+        disabled={isDisabled}
+        {...props}
+      >
+        {content}
+      </Comp>
+    );
   }
 );
 Button.displayName = "Button";

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createEntregaAction } from "@/features/atacado/actions";
+import { EntregaActionButton } from "@/features/atacado/entrega-action-button";
+import { EntregaConclusaoModal } from "@/features/atacado/entrega-conclusao-modal";
 import { AtacadoStatusBadge } from "@/features/atacado/status";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,7 @@ export default async function AtacadoEntregasPage() {
       orderBy: [{ entregueEm: "desc" }, { createdAt: "desc" }]
     })
   ]);
+  const pendentes = entregas.filter((entrega) => ["PENDENTE", "EM_ROTA"].includes(entrega.status));
   const concluidas = entregas.filter((entrega) => entrega.status === "ENTREGUE");
   const totaisPorMotorista = Array.from(concluidas.reduce((totais, entrega) => {
     const motorista = entrega.motorista?.name ?? "Sem motorista";
@@ -68,6 +71,61 @@ export default async function AtacadoEntregasPage() {
           </CardContent>
         </Card>
       ) : null}
+      <Card>
+        <CardHeader className="border-b bg-muted/20"><CardTitle>Entregas pendentes de aceite</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Pedido</TableHead>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Motorista</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Acoes</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pendentes.length ? pendentes.map((entrega) => (
+                <TableRow key={entrega.id}>
+                  <TableCell className="font-semibold">{entrega.pedido.numero}</TableCell>
+                  <TableCell>{entrega.pedido.cliente.nome}</TableCell>
+                  <TableCell>{entrega.motorista?.name ?? "-"}</TableCell>
+                  <TableCell><AtacadoStatusBadge status={entrega.status} /></TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-2">
+                      {entrega.status === "PENDENTE" ? (
+                        <EntregaActionButton
+                          id={entrega.id}
+                          label={canDispatch ? "Liberar" : "Aceitar entrega"}
+                          endpoint={`/api/atacado/entregas/${entrega.id}/${canDispatch ? "liberar" : "aceitar"}`}
+                        />
+                      ) : null}
+                      {isDriverOnly && entrega.status === "EM_ROTA" ? (
+                        <EntregaConclusaoModal
+                          entrega={{
+                            id: entrega.id,
+                            pedidoNumero: entrega.pedido.numero,
+                            clienteNome: entrega.pedido.cliente.nome,
+                            motoristaNome: entrega.motorista?.name ?? "-",
+                            tipo: entrega.tipo,
+                            endereco: entrega.endereco,
+                            observacao: entrega.observacao,
+                            status: entrega.status
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-sm text-muted-foreground">Nenhuma entrega pendente de aceite.</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="border-b bg-muted/20"><CardTitle>Em rota</CardTitle></CardHeader>
