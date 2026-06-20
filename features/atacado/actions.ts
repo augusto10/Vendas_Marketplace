@@ -234,7 +234,7 @@ export async function createEntregaAction(formData: FormData) {
   });
   await createEntrega(pedidoId, data, access.user.id);
   const isAdmin = access.user.roles.some((role) => ["master", "admin", "admin_atacado"].includes(role));
-  await updatePedidoStatus(pedidoId, { status: "EM_EXPEDICAO", observacao: "Entrega criada" }, access.user.id, { isMaster: isAdmin });
+  await updatePedidoStatus(pedidoId, { status: "EM_ENTREGA", observacao: "Entrega liberada para o motorista" }, access.user.id, { isMaster: isAdmin });
   revalidatePath("/atacado");
   revalidatePath("/atacado/entregas");
 }

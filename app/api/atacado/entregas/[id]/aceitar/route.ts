@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const access = await requirePermission("atacado.separacao.update", request);
+    const access = await requirePermission("atacado.entregas.update", request);
     if (access.error || !access.user) return access.error;
 
     const { id } = await context.params;

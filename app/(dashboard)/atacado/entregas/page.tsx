@@ -22,7 +22,7 @@ export default async function AtacadoEntregasPage() {
   const isDriverOnly = session.user.roles.includes("motorista_atacado") && !canDispatch;
   const [pedidos, motoristas, entregas] = await Promise.all([
     canDispatch
-      ? prisma.atacadoPedido.findMany({ where: { status: { in: ["PAGO", "EM_EXPEDICAO", "EM_ENTREGA"] } }, include: { cliente: true }, orderBy: { criadoEm: "desc" } })
+      ? prisma.atacadoPedido.findMany({ where: { status: { in: ["PAGO", "EM_ENTREGA"] } }, include: { cliente: true }, orderBy: { criadoEm: "desc" } })
       : Promise.resolve([]),
     canDispatch
       ? prisma.user.findMany({ where: { roles: { some: { role: { slug: "motorista_atacado" } } } }, orderBy: { name: "asc" } })
@@ -72,7 +72,7 @@ export default async function AtacadoEntregasPage() {
         </Card>
       ) : null}
       <Card>
-        <CardHeader className="border-b bg-muted/20"><CardTitle>Entregas pendentes de aceite</CardTitle></CardHeader>
+        <CardHeader className="border-b bg-muted/20"><CardTitle>Entregas do motorista</CardTitle></CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -96,8 +96,8 @@ export default async function AtacadoEntregasPage() {
                       {entrega.status === "PENDENTE" ? (
                         <EntregaActionButton
                           id={entrega.id}
-                          label={canDispatch ? "Liberar" : "Aceitar entrega"}
-                          endpoint={`/api/atacado/entregas/${entrega.id}/${canDispatch ? "liberar" : "aceitar"}`}
+                          label="Aceitar entrega"
+                          endpoint={`/api/atacado/entregas/${entrega.id}/aceitar`}
                         />
                       ) : null}
                       {isDriverOnly && entrega.status === "EM_ROTA" ? (

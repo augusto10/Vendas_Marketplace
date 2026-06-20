@@ -862,6 +862,7 @@ export function createEntrega(id: string, data: EntregaInput, userId: string) {
       motoristaId: data.motoristaId,
       registradoPorId: userId,
       tipo: data.tipo,
+      status: "EM_ROTA",
       endereco: data.endereco,
       observacao: data.observacao
     }
@@ -941,21 +942,21 @@ export async function solicitarEntrega(pedidoId: string, userId: string) {
         motoristaId: userId,
         registradoPorId: userId,
         tipo: "ENTREGA_PROPRIA",
-        status: "PENDENTE",
+        status: "EM_ROTA",
         endereco: pedido.cliente.endereco,
-        observacao: "Motorista solicitou liberacao da expedicao"
+        observacao: "Motorista aceitou a entrega liberada pelo financeiro"
       },
       include: { pedido: { include: { cliente: true } }, motorista: { select: { id: true, name: true, email: true } } }
     });
 
-    await tx.atacadoPedido.update({ where: { id: pedidoId }, data: { status: "EM_EXPEDICAO" } });
+    await tx.atacadoPedido.update({ where: { id: pedidoId }, data: { status: "EM_ENTREGA" } });
     await tx.atacadoHistoricoStatus.create({
       data: {
         pedidoId,
         usuarioId: userId,
         statusAnterior: "PAGO",
-        statusNovo: "EM_EXPEDICAO",
-        observacao: "Motorista solicitou liberacao da expedicao"
+        statusNovo: "EM_ENTREGA",
+        observacao: "Motorista aceitou a entrega liberada pelo financeiro"
       }
     });
 
@@ -970,15 +971,21 @@ export async function liberarEntregaExpedicao(id: string, userId: string) {
       select: { pedidoId: true, motoristaId: true, status: true, pedido: { select: { status: true } } }
     });
 
-    if (entregaAtual.status !== "PENDENTE") {
-      throw new Error("Entrega nao esta aguardando liberacao.");
+    if (!["PENDENTE", "EM_ROTA"].includes(entregaAtual.status)) {
+      throw new Error("Entrega nao esta disponivel para aceite.");
     }
 
-    const entrega = await tx.atacadoEntrega.update({
-      where: { id },
-      data: { status: "EM_ROTA" },
-      include: { pedido: { include: { cliente: true } } }
-    });
+    const entrega =
+      entregaAtual.status === "PENDENTE"
+        ? await tx.atacadoEntrega.update({
+            where: { id },
+            data: { status: "EM_ROTA" },
+            include: { pedido: { include: { cliente: true } } }
+          })
+        : await tx.atacadoEntrega.findUniqueOrThrow({
+            where: { id },
+            include: { pedido: { include: { cliente: true } } }
+          });
 
     if (entregaAtual.pedido.status !== "EM_ENTREGA") {
       await tx.atacadoPedido.update({ where: { id: entregaAtual.pedidoId }, data: { status: "EM_ENTREGA" } });
@@ -988,7 +995,7 @@ export async function liberarEntregaExpedicao(id: string, userId: string) {
           usuarioId: userId,
           statusAnterior: entregaAtual.pedido.status,
           statusNovo: "EM_ENTREGA",
-          observacao: "Expedicao liberou a entrega para o motorista"
+          observacao: "Motorista aceitou a entrega"
         }
       });
     }
