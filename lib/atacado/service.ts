@@ -41,6 +41,19 @@ type CarteiraMovimentoInput = {
   metadata?: Prisma.InputJsonValue | null;
 };
 
+type PedidoItemCreateInput = {
+  produtoId: string;
+  quantidadeCaixas: number;
+  quantidadePares: number;
+  precoCaixa: Prisma.Decimal;
+  valorTotal: Prisma.Decimal;
+  observacao: string | null;
+};
+
+type PedidoItemBuildOptions = {
+  priceOverrideAuthorized?: boolean;
+};
+
 type DecimalLike = Prisma.Decimal.Value;
 
 function toDecimal(value: DecimalLike | Prisma.Decimal = 0) {
@@ -475,11 +488,43 @@ export function getPedido(id: string) {
   });
 }
 
-export async function createPedido(data: PedidoInput, userId: string, options: { priceOverrideAuthorized?: boolean } = {}) {
+function buildPedidoItens(
+  data: PedidoInput,
+  produtos: Awaited<ReturnType<typeof prisma.atacadoProduto.findMany>>,
+  options: PedidoItemBuildOptions = {}
+) {
+  const produtosById = new Map(produtos.map((produto) => [produto.id, produto]));
+
+  return data.itens.map((item) => {
+    const produto = produtosById.get(item.produtoId);
+    if (!produto) throw new Error("Produto invalido no pedido.");
+    const quantidadePares = item.quantidadeCaixas * produto.quantidadePorCaixa;
+    const basePrecoCaixa = item.precoCaixa !== null && item.precoCaixa !== undefined
+      ? new Prisma.Decimal(item.precoCaixa)
+      : produto.precoPorCaixa;
+    const descontoPercentual = new Prisma.Decimal(item.descontoPercentual ?? 0);
+    const changedPrice = !basePrecoCaixa.equals(produto.precoPorCaixa);
+    const changedDiscount = descontoPercentual.gt(0);
+    if ((changedPrice || changedDiscount) && !produto.permiteEditarPrecoPedido && !options.priceOverrideAuthorized) {
+      throw new Error("Alteracao de preco ou desconto precisa de autorizacao de administrador.");
+    }
+    const precoCaixa = basePrecoCaixa.mul(new Prisma.Decimal(100).sub(descontoPercentual)).div(100);
+    const valorTotal = precoCaixa.mul(item.quantidadeCaixas);
+    return {
+      produtoId: item.produtoId,
+      quantidadeCaixas: item.quantidadeCaixas,
+      quantidadePares,
+      precoCaixa,
+      valorTotal,
+      observacao: item.observacao ?? (descontoPercentual.gt(0) ? `Desconto ${descontoPercentual.toString()}% sobre ${basePrecoCaixa.toString()}` : null)
+    } satisfies PedidoItemCreateInput;
+  });
+}
+
+export async function createPedido(data: PedidoInput, userId: string, options: PedidoItemBuildOptions = {}) {
   const produtos = await prisma.atacadoProduto.findMany({
     where: { id: { in: data.itens.map((item) => item.produtoId) } }
   });
-  const produtosById = new Map(produtos.map((produto) => [produto.id, produto]));
 
   return prisma.$transaction(async (tx) => {
     const today = new Date();
@@ -488,30 +533,7 @@ export async function createPedido(data: PedidoInput, userId: string, options: {
     const count = await tx.atacadoPedido.count({ where: { criadoEm: { gte: start, lt: end } } });
     const numero = `AT${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}-${String(count + 1).padStart(4, "0")}`;
 
-    const itens = data.itens.map((item) => {
-      const produto = produtosById.get(item.produtoId);
-      if (!produto) throw new Error("Produto invalido no pedido.");
-      const quantidadePares = item.quantidadeCaixas * produto.quantidadePorCaixa;
-      const basePrecoCaixa = item.precoCaixa !== null && item.precoCaixa !== undefined
-        ? new Prisma.Decimal(item.precoCaixa)
-        : produto.precoPorCaixa;
-      const descontoPercentual = new Prisma.Decimal(item.descontoPercentual ?? 0);
-      const changedPrice = !basePrecoCaixa.equals(produto.precoPorCaixa);
-      const changedDiscount = descontoPercentual.gt(0);
-      if ((changedPrice || changedDiscount) && !produto.permiteEditarPrecoPedido && !options.priceOverrideAuthorized) {
-        throw new Error("Alteracao de preco ou desconto precisa de autorizacao de administrador.");
-      }
-      const precoCaixa = basePrecoCaixa.mul(new Prisma.Decimal(100).sub(descontoPercentual)).div(100);
-      const valorTotal = precoCaixa.mul(item.quantidadeCaixas);
-      return {
-        produtoId: item.produtoId,
-        quantidadeCaixas: item.quantidadeCaixas,
-        quantidadePares,
-        precoCaixa,
-        valorTotal,
-        observacao: item.observacao ?? (descontoPercentual.gt(0) ? `Desconto ${descontoPercentual.toString()}% sobre ${basePrecoCaixa.toString()}` : null)
-      };
-    });
+    const itens = buildPedidoItens(data, produtos, options);
 
     const valorTotal = itens.reduce((sum, item) => sum.add(item.valorTotal), new Prisma.Decimal(0));
     const pedido = await tx.atacadoPedido.create({
@@ -532,6 +554,56 @@ export async function createPedido(data: PedidoInput, userId: string, options: {
         usuarioId: userId,
         statusNovo: pedido.status,
         observacao: "Pedido criado"
+      }
+    });
+
+    return pedido;
+  });
+}
+
+export async function updatePedido(id: string, data: PedidoInput, userId: string, options: PedidoItemBuildOptions = {}) {
+  const produtos = await prisma.atacadoProduto.findMany({
+    where: { id: { in: data.itens.map((item) => item.produtoId) } }
+  });
+
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.atacadoPedido.findUniqueOrThrow({
+      where: { id },
+      select: { status: true }
+    });
+
+    if (["EM_ENTREGA", "ENTREGUE", "CANCELADO"].includes(current.status)) {
+      throw new Error("Nao e possivel alterar o carrinho de pedido em rota, entregue ou cancelado.");
+    }
+
+    const itens = buildPedidoItens(data, produtos, options);
+    const valorTotal = itens.reduce((sum, item) => sum.add(item.valorTotal), new Prisma.Decimal(0));
+
+    await tx.atacadoPedidoItem.deleteMany({ where: { pedidoId: id } });
+
+    const pedido = await tx.atacadoPedido.update({
+      where: { id },
+      data: {
+        clienteId: data.clienteId,
+        vendedorId: data.vendedorId ?? userId,
+        observacao: data.observacao,
+        valorTotal,
+        itens: { create: itens }
+      },
+      include: {
+        cliente: true,
+        vendedor: { select: { id: true, name: true, email: true } },
+        itens: { include: { produto: true } }
+      }
+    });
+
+    await tx.atacadoHistoricoStatus.create({
+      data: {
+        pedidoId: id,
+        usuarioId: userId,
+        statusAnterior: current.status,
+        statusNovo: current.status,
+        observacao: "Carrinho do pedido alterado"
       }
     });
 

@@ -1,6 +1,7 @@
 import { fail, handleApiError, ok } from "@/lib/api-response";
 import { requirePermission } from "@/lib/atacado/permissions";
-import { getPedido } from "@/lib/atacado/service";
+import { pedidoSchema } from "@/lib/atacado/schemas";
+import { getPedido, updatePedido } from "@/lib/atacado/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,3 +20,28 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   }
 }
 
+async function updatePedidoRequest(request: Request, context: { params: Promise<{ id: string }> }) {
+  const access = await requirePermission("atacado.pedidos.update", request);
+  if (access.error || !access.user) return access.error;
+
+  const { id } = await context.params;
+  const body = pedidoSchema.parse(await request.json());
+  const pedido = await updatePedido(id, body, access.user.id);
+  return ok({ pedido });
+}
+
+export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    return await updatePedidoRequest(request, context);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    return await updatePedidoRequest(request, context);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
