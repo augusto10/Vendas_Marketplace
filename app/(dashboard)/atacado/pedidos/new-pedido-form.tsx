@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,8 +22,18 @@ type ProdutoOption = Produto & {
 export function NewPedidoForm({ clientes, produtos }: { clientes: ClienteOption[]; produtos: ProdutoOption[] }) {
   const [clienteId, setClienteId] = useState("");
   const [pedidoItems, setPedidoItems] = useState<PedidoItem[]>([]);
+  const [cartScrollVersion, setCartScrollVersion] = useState(0);
+  const cartEndRef = useRef<HTMLDivElement | null>(null);
 
   const selectedCliente = useMemo(() => clientes.find((c) => c.id === clienteId), [clienteId, clientes]);
+
+  useEffect(() => {
+    if (cartScrollVersion === 0) return;
+
+    window.requestAnimationFrame(() => {
+      cartEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  }, [cartScrollVersion]);
 
   const handleAddProduto = (produto: Produto) => {
     const existingIndex = pedidoItems.findIndex((item) => item.produtoId === produto.id);
@@ -47,6 +57,7 @@ export function NewPedidoForm({ clientes, produtos }: { clientes: ClienteOption[
       };
       setPedidoItems([...pedidoItems, newItem]);
     }
+    setCartScrollVersion((version) => version + 1);
   };
 
   const handleRemoveItem = (produtoId: string) => {
@@ -124,6 +135,7 @@ export function NewPedidoForm({ clientes, produtos }: { clientes: ClienteOption[
                 onUpdatePreco={handleUpdatePreco}
                 onUpdateDesconto={handleUpdateDesconto}
               />
+              <div ref={cartEndRef} aria-hidden="true" />
 
               {/* Formulário Final */}
               <form
