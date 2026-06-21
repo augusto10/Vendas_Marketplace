@@ -178,68 +178,45 @@ async function backfillCarteiraClienteHistorica(tx: Prisma.TransactionClient, cl
     }
 
     const dataMovimento = pedido.criadoEm ?? new Date();
-    let saldoPedido = toDecimal(pedido.valorTotal);
-    const possuiPagamento = pedido.pagamentos.some((pagamento) => pagamento.status !== "PENDENTE" && toDecimal(pagamento.valorPago).gt(0));
+    const totalPago = pedido.pagamentos.reduce((sum, pagamento) => {
+      if (pagamento.status === "PENDENTE") return sum;
+      return sum.add(toDecimal(pagamento.valorPago));
+    }, new Prisma.Decimal(0));
 
-    if (!possuiPagamento) {
+    if (totalPago.lt(pedido.valorTotal)) {
       await createCarteiraMovimento(tx, {
         clienteId,
         pedidoId: pedido.id,
         tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO",
         natureza: "DEBITO",
-        valor: saldoPedido,
+        valor: toDecimal(pedido.valorTotal).sub(totalPago),
         origem: "SISTEMA",
         dataMovimento,
         dataCompetencia: dataMovimento,
-        observacao: "Backfill historico de pedido sem pagamento.",
+        observacao: totalPago.gt(0) ? "Backfill historico de pagamento parcial." : "Backfill historico de pedido sem pagamento.",
         idempotencyKey: `legacy:pedido:${pedido.id}:abertura`
       });
     }
 
-    for (const pagamento of pedido.pagamentos) {
-      const valorPago = toDecimal(pagamento.valorPago);
-      if (valorPago.lte(0) || pagamento.status === "PENDENTE") {
-        continue;
-      }
-
-      const valorAplicado = saldoPedido.gt(0) ? (valorPago.gte(saldoPedido) ? saldoPedido : valorPago) : valorPago;
-      const tipo = saldoPedido.gt(0) && valorAplicado.eq(saldoPedido) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
-      const dataPagamento = pagamento.registradoEm ?? dataMovimento;
-
-      if (valorAplicado.gt(0)) {
+    if (totalPago.gt(pedido.valorTotal)) {
+      const ultimoPagamento = pedido.pagamentos.filter((pagamento) => pagamento.status !== "PENDENTE").at(-1);
+      if (ultimoPagamento) {
         await createCarteiraMovimento(tx, {
           clienteId,
           pedidoId: pedido.id,
-          pagamentoId: pagamento.id,
-          tipo,
-          natureza: "CREDITO",
-          valor: valorAplicado,
-          origem: "SISTEMA",
-          dataMovimento: dataPagamento,
-          dataCompetencia: dataPagamento,
-          observacao: "Backfill historico de pagamento.",
-          idempotencyKey: `legacy:pagamento:${pagamento.id}:credito`
-        });
-        saldoPedido = saldoPedido.sub(valorAplicado);
-      }
-
-      if (valorPago.gt(valorAplicado)) {
-        await createCarteiraMovimento(tx, {
-          clienteId,
-          pedidoId: pedido.id,
-          pagamentoId: pagamento.id,
+          pagamentoId: ultimoPagamento.id,
           tipo: "SOBRA_PAGAMENTO",
           natureza: "CREDITO",
-          valor: valorPago.sub(valorAplicado),
+          valor: totalPago.sub(pedido.valorTotal),
           origem: "SISTEMA",
-          dataMovimento: dataPagamento,
-          dataCompetencia: dataPagamento,
+          dataMovimento: ultimoPagamento.registradoEm ?? dataMovimento,
+          dataCompetencia: ultimoPagamento.registradoEm ?? dataMovimento,
           observacao: "Backfill historico de sobra de pagamento.",
-          idempotencyKey: `legacy:pagamento:${pagamento.id}:sobra`
+          idempotencyKey: `legacy:pedido:${pedido.id}:sobra`
         });
       }
     }
-  }
+}
 }
 
 export async function listClientes(query?: string) {
@@ -460,6 +437,7 @@ export async function listPedidos(filters: { status?: AtacadoPedidoStatus; clien
       vendedor: { select: { id: true, name: true, email: true } },
       itens: { include: { produto: true } },
       pagamentos: { orderBy: { registradoEm: "desc" }, take: 1 },
+      anexos: { orderBy: { createdAt: "desc" }, take: 3 },
       entregas: { orderBy: { createdAt: "desc" }, take: 1 }
     },
     orderBy: { criadoEm: "desc" },
@@ -631,7 +609,7 @@ async function updatePedidoStatusTx(
     ? await tx.atacadoPedido.findUniqueOrThrow({ where: { id } })
     : await tx.atacadoPedido.update({ where: { id }, data: { status: data.status } });
 
-  if (data.status === "AGUARDANDO_PAGAMENTO" && options.createOpenMovement) {
+  if (options.createOpenMovement) {
     const existingOpening = await tx.atacadoCarteiraMovimento.findFirst({
       where: {
         pedidoId: id,
@@ -757,10 +735,12 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
     if (openingMovement) {
       const saldoPedidoAtual = await sumMovimentosPedido(tx, id);
       const saldoDevedor = saldoPedidoAtual.isNegative() ? saldoPedidoAtual.abs() : new Prisma.Decimal(0);
+      const valorAplicado = saldoDevedor.gt(0)
+        ? (valorPago.gte(saldoDevedor) ? saldoDevedor : valorPago)
+        : new Prisma.Decimal(0);
 
-      if (saldoDevedor.gt(0)) {
-        const valorAplicadoNaDivida = valorPago.gte(saldoDevedor) ? saldoDevedor : valorPago;
-        const tipoAplicacao = valorAplicadoNaDivida.eq(saldoDevedor) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
+      if (valorAplicado.gt(0)) {
+        const tipoAplicacao = valorAplicado.eq(saldoDevedor) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
 
         await createCarteiraMovimento(tx, {
           clienteId: pedido.clienteId,
@@ -768,7 +748,7 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
           pagamentoId: pagamento.id,
           tipo: tipoAplicacao,
           natureza: "CREDITO",
-          valor: valorAplicadoNaDivida,
+          valor: valorAplicado,
           origem: "PAGAMENTO",
           criadoPorUsuarioId: userId,
           observacao: data.observacao ?? "Pagamento registrado.",
@@ -776,42 +756,7 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
           dataMovimento: pagamento.registradoEm,
           idempotencyKey: `pagamento:${pagamento.id}:principal`
         });
-
-        if (valorPago.gt(valorAplicadoNaDivida)) {
-          await createCarteiraMovimento(tx, {
-            clienteId: pedido.clienteId,
-            pedidoId: id,
-            pagamentoId: pagamento.id,
-            tipo: "SOBRA_PAGAMENTO",
-            natureza: "CREDITO",
-            valor: valorPago.sub(valorAplicadoNaDivida),
-            origem: "PAGAMENTO",
-            criadoPorUsuarioId: userId,
-            observacao: "Sobra de pagamento registrada como credito futuro.",
-            dataCompetencia: pagamento.registradoEm,
-            dataMovimento: pagamento.registradoEm,
-            idempotencyKey: `pagamento:${pagamento.id}:sobra`
-          });
-        }
       }
-    } else {
-      const valorAplicado = valorPago.gte(pedido.valorTotal) ? pedido.valorTotal : valorPago;
-      const tipoAplicacao = valorAplicado.eq(pedido.valorTotal) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
-
-      await createCarteiraMovimento(tx, {
-        clienteId: pedido.clienteId,
-        pedidoId: id,
-        pagamentoId: pagamento.id,
-        tipo: tipoAplicacao,
-        natureza: "CREDITO",
-        valor: valorAplicado,
-        origem: "PAGAMENTO",
-        criadoPorUsuarioId: userId,
-        observacao: data.observacao ?? "Pagamento registrado.",
-        dataCompetencia: pagamento.registradoEm,
-        dataMovimento: pagamento.registradoEm,
-        idempotencyKey: `pagamento:${pagamento.id}:principal`
-      });
 
       if (valorPago.gt(valorAplicado)) {
         await createCarteiraMovimento(tx, {
@@ -829,10 +774,42 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
           idempotencyKey: `pagamento:${pagamento.id}:sobra`
         });
       }
+    } else if (valorPago.lt(pedido.valorTotal)) {
+      await createCarteiraMovimento(tx, {
+        clienteId: pedido.clienteId,
+        pedidoId: id,
+        pagamentoId: pagamento.id,
+        tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO",
+        natureza: "DEBITO",
+        valor: pedido.valorTotal.sub(valorPago),
+        origem: "PEDIDO",
+        criadoPorUsuarioId: userId,
+        observacao: data.observacao ?? "Pagamento parcial registrado. Restante em aberto.",
+        dataCompetencia: pagamento.registradoEm,
+        dataMovimento: pagamento.registradoEm,
+        idempotencyKey: `pedido:${id}:abertura`
+      });
+    } else if (valorPago.gt(pedido.valorTotal)) {
+      await createCarteiraMovimento(tx, {
+        clienteId: pedido.clienteId,
+        pedidoId: id,
+        pagamentoId: pagamento.id,
+        tipo: "SOBRA_PAGAMENTO",
+        natureza: "CREDITO",
+        valor: valorPago.sub(pedido.valorTotal),
+        origem: "PAGAMENTO",
+        criadoPorUsuarioId: userId,
+        observacao: "Pagamento excedente registrado como credito futuro.",
+        dataCompetencia: pagamento.registradoEm,
+        dataMovimento: pagamento.registradoEm,
+        idempotencyKey: `pagamento:${pagamento.id}:sobra`
+      });
     }
 
     const saldoDepois = await sumMovimentosPedido(tx, id);
-    const statusFinal: AtacadoPagamentoStatus = saldoDepois.isNegative() ? "PARCIAL" : "PAGO";
+    const statusFinal: AtacadoPagamentoStatus = openingMovement
+      ? (saldoDepois.isNegative() ? "PARCIAL" : "PAGO")
+      : (valorPago.lt(pedido.valorTotal) ? "PARCIAL" : "PAGO");
     if (pagamento.status !== statusFinal) {
       await tx.atacadoPagamento.update({
         where: { id: pagamento.id },
@@ -840,7 +817,7 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
       });
     }
 
-    await updatePedidoStatusTx(tx, id, { status: saldoDepois.isNegative() ? "AGUARDANDO_PAGAMENTO" : "PAGO", observacao: saldoDepois.isNegative() ? "Pagamento parcial registrado" : "Pagamento confirmado" }, userId, { isMaster: true, createOpenMovement: false });
+    await updatePedidoStatusTx(tx, id, { status: statusFinal === "PARCIAL" ? "AGUARDANDO_PAGAMENTO" : "PAGO", observacao: statusFinal === "PARCIAL" ? "Pagamento parcial registrado" : "Pagamento confirmado" }, userId, { isMaster: true, createOpenMovement: false });
   }
 
   return pagamento;
@@ -1067,6 +1044,34 @@ type CarteiraMovimentoFilters = {
   pedidoId?: string;
 };
 
+type CarteiraMovimentoComRelacoes = Awaited<ReturnType<typeof listMovimentosCarteira>>[number];
+
+function isLegacySettlementWithoutDebt(movimento: {
+  tipo: CarteiraMovimentoTipo;
+  origem: CarteiraMovimentoOrigem;
+  pedidoId?: string | null;
+  observacao?: string | null;
+}, movimentosDoPedido: Array<{ tipo: CarteiraMovimentoTipo; natureza: CarteiraMovimentoNatureza; origem: CarteiraMovimentoOrigem; observacao?: string | null }>) {
+  if (!movimento.pedidoId) return false;
+  const hasAutomaticOpening = movimentosDoPedido.some((item) => {
+    const observacao = item.observacao?.toLowerCase() ?? "";
+    return item.tipo === "PEDIDO_ABERTO_SEM_PAGAMENTO" && observacao.includes("conciliacao do pagamento");
+  });
+
+  if (hasAutomaticOpening) {
+    return ["PEDIDO_ABERTO_SEM_PAGAMENTO", "PAGAMENTO_PARCIAL", "PAGAMENTO_TOTAL"].includes(movimento.tipo);
+  }
+
+  if (movimento.origem !== "SISTEMA") return false;
+  if (!["PAGAMENTO_PARCIAL", "PAGAMENTO_TOTAL"].includes(movimento.tipo)) return false;
+
+  return !movimentosDoPedido.some((item) => item.natureza === "DEBITO" && item.tipo === "PEDIDO_ABERTO_SEM_PAGAMENTO");
+}
+
+function signedMovimentoValue(movimento: { natureza: CarteiraMovimentoNatureza; valor: Prisma.Decimal }) {
+  return signedDelta(movimento.natureza, toDecimal(movimento.valor));
+}
+
 async function listMovimentosCarteira(tx: Prisma.TransactionClient, filters: CarteiraMovimentoFilters) {
   const dataMovimento = filters.dataInicio || filters.dataFim
     ? {
@@ -1127,19 +1132,29 @@ export async function getExtratoCarteiraCliente(clienteId: string, filters: Omit
       where: { id: clienteId },
       select: { id: true, nome: true, documento: true, status: true }
     });
-    const carteira = await ensureCarteiraCliente(tx, clienteId);
-    const movimentos = await listMovimentosCarteira(tx, {
-      clienteId,
-      dataInicio: filters.dataInicio,
-      dataFim: filters.dataFim,
-      tipo: filters.tipo,
-      pedidoId: filters.pedidoId
+    await ensureCarteiraCliente(tx, clienteId);
+    const movimentosVisiveis = await listMovimentosCarteiraVisiveis(tx, clienteId);
+    let saldoCorrente = new Prisma.Decimal(0);
+    const movimentosComSaldo = movimentosVisiveis.map((movimento) => {
+      const saldoAnterior = saldoCorrente;
+      saldoCorrente = saldoCorrente.add(signedMovimentoValue(movimento));
+      return {
+        ...movimento,
+        saldoAnterior,
+        saldoPosterior: saldoCorrente
+      };
     });
+    const movimentos = movimentosComSaldo
+      .filter((movimento) => !filters.tipo || movimento.tipo === filters.tipo)
+      .filter((movimento) => !filters.pedidoId || movimento.pedidoId === filters.pedidoId)
+      .filter((movimento) => !filters.dataInicio || movimento.dataMovimento >= filters.dataInicio)
+      .filter((movimento) => !filters.dataFim || movimento.dataMovimento <= filters.dataFim)
+      .sort((left, right) => right.dataMovimento.getTime() - left.dataMovimento.getTime());
 
     return {
       cliente,
-      saldoAtual: carteira.saldoAtual,
-      saldoBloqueado: carteira.saldoBloqueado,
+      saldoAtual: saldoCorrente,
+      saldoBloqueado: new Prisma.Decimal(0),
       periodo: {
         dataInicio: filters.dataInicio ?? null,
         dataFim: filters.dataFim ?? null
@@ -1189,6 +1204,121 @@ export function criarCreditoManual(clienteId: string, data: { valor: Prisma.Deci
   });
 }
 
+async function listMovimentosCarteiraVisiveis(tx: Prisma.TransactionClient, clienteId: string) {
+  const movimentos = await tx.atacadoCarteiraMovimento.findMany({
+    where: { clienteId },
+    include: {
+      pedido: { select: { id: true, numero: true, valorTotal: true, status: true } },
+      pagamento: { select: { id: true, valorPago: true, status: true, registradoEm: true } },
+      criadoPorUsuario: { select: { id: true, name: true, email: true } }
+    },
+    orderBy: [{ dataMovimento: "asc" }, { createdAt: "asc" }]
+  });
+  const movimentosPorPedido = new Map<string, typeof movimentos>();
+  for (const movimento of movimentos) {
+    if (!movimento.pedidoId) continue;
+    const current = movimentosPorPedido.get(movimento.pedidoId) ?? [];
+    current.push(movimento);
+    movimentosPorPedido.set(movimento.pedidoId, current);
+  }
+
+  return movimentos.filter((movimento) => !isLegacySettlementWithoutDebt(movimento, movimento.pedidoId ? movimentosPorPedido.get(movimento.pedidoId) ?? [] : []));
+}
+
+function calcularSaldoMovimentos(movimentos: Array<{ natureza: CarteiraMovimentoNatureza; valor: Prisma.Decimal }>) {
+  return movimentos.reduce((saldo, movimento) => saldo.add(signedMovimentoValue(movimento)), new Prisma.Decimal(0));
+}
+
+export async function adicionarSaldoCarteiraCliente(
+  clienteId: string,
+  data: {
+    valor: Prisma.Decimal.Value;
+    observacao: string;
+    dataCompetencia?: Date;
+    criadoPorUsuarioId: string;
+    comprovante?: Awaited<ReturnType<typeof uploadImage>> | null;
+  }
+) {
+  return prisma.$transaction(async (tx) => {
+    let restante = toDecimal(data.valor);
+    const movimentosCriados = [];
+    const dataMovimento = data.dataCompetencia ?? new Date();
+    const metadata = data.comprovante
+      ? {
+          comprovanteUrl: data.comprovante.url,
+          comprovantePublicId: data.comprovante.publicId,
+          comprovanteMimeType: data.comprovante.mimeType,
+          comprovanteSize: data.comprovante.size
+        }
+      : undefined;
+
+    const movimentosComPedido = await tx.atacadoCarteiraMovimento.findMany({
+      where: {
+        clienteId,
+        pedidoId: { not: null }
+      },
+      select: {
+        pedidoId: true,
+        dataMovimento: true,
+        pedido: { select: { id: true, status: true } }
+      },
+      orderBy: [{ dataMovimento: "asc" }, { createdAt: "asc" }]
+    });
+    const pedidoIds = [...new Set(movimentosComPedido.map((movimento) => movimento.pedidoId).filter(Boolean) as string[])];
+
+    for (const pedidoId of pedidoIds) {
+      if (restante.lte(0)) break;
+
+      const saldoPedido = await sumMovimentosPedido(tx, pedidoId);
+      if (!saldoPedido.isNegative()) continue;
+
+      const saldoDevedor = saldoPedido.abs();
+      const valorAplicado = restante.gte(saldoDevedor) ? saldoDevedor : restante;
+      const tipoAplicacao = valorAplicado.eq(saldoDevedor) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
+
+      movimentosCriados.push(await createCarteiraMovimento(tx, {
+        clienteId,
+        pedidoId,
+        tipo: tipoAplicacao,
+        natureza: "CREDITO",
+        valor: valorAplicado,
+        origem: "MANUAL",
+        criadoPorUsuarioId: data.criadoPorUsuarioId,
+        observacao: data.observacao,
+        dataCompetencia: dataMovimento,
+        dataMovimento,
+        metadata,
+        idempotencyKey: undefined
+      }));
+
+      restante = restante.sub(valorAplicado);
+      const saldoAposAplicacao = await sumMovimentosPedido(tx, pedidoId);
+      await updatePedidoStatusTx(tx, pedidoId, {
+        status: saldoAposAplicacao.isNegative() ? "AGUARDANDO_PAGAMENTO" : "PAGO",
+        observacao: saldoAposAplicacao.isNegative() ? "Saldo aplicado parcialmente na carteira" : "Saldo aplicado e pedido quitado"
+      }, data.criadoPorUsuarioId, { isMaster: true, createOpenMovement: false });
+    }
+
+    if (restante.gt(0)) {
+      movimentosCriados.push(await createCarteiraMovimento(tx, {
+        clienteId,
+        tipo: "CREDITO_MANUAL",
+        natureza: "CREDITO",
+        valor: restante,
+        origem: "MANUAL",
+        criadoPorUsuarioId: data.criadoPorUsuarioId,
+        observacao: data.observacao,
+        dataCompetencia: dataMovimento,
+        dataMovimento,
+        metadata,
+        idempotencyKey: undefined
+      }));
+    }
+
+    return movimentosCriados;
+  });
+}
+
 export function criarDebitoManual(clienteId: string, data: { valor: Prisma.Decimal.Value; observacao: string; dataCompetencia?: Date; criadoPorUsuarioId: string }) {
   return createMovimentoManual(clienteId, {
     valor: data.valor,
@@ -1214,24 +1344,22 @@ export function criarAjusteManual(clienteId: string, data: { valor: Prisma.Decim
 }
 
 export async function getRelatorioCarteira(period: { start: Date; end: Date }) {
-  const [clientes, movimentos, carteiras, pedidos] = await Promise.all([
+  const [clientes, movimentos, pedidos] = await Promise.all([
     prisma.atacadoCliente.findMany({
       select: { id: true, nome: true, documento: true, status: true }
     }),
     prisma.atacadoCarteiraMovimento.findMany({
-      where: { dataMovimento: { gte: period.start, lte: period.end } },
       select: {
         clienteId: true,
         pedidoId: true,
         tipo: true,
         natureza: true,
+        origem: true,
+        observacao: true,
         valor: true,
         dataMovimento: true,
         dataCompetencia: true
       }
-    }),
-    prisma.atacadoCarteiraCliente.findMany({
-      select: { clienteId: true, saldoAtual: true, saldoBloqueado: true }
     }),
     prisma.atacadoPedido.findMany({
       select: {
@@ -1249,9 +1377,16 @@ export async function getRelatorioCarteira(period: { start: Date; end: Date }) {
     })
   ]);
 
-  const carteiraByCliente = new Map(carteiras.map((item) => [item.clienteId, item]));
-  const movimentosByCliente = new Map<string, typeof movimentos>();
+  const movimentosPorPedido = new Map<string, typeof movimentos>();
   for (const movimento of movimentos) {
+    if (!movimento.pedidoId) continue;
+    const current = movimentosPorPedido.get(movimento.pedidoId) ?? [];
+    current.push(movimento);
+    movimentosPorPedido.set(movimento.pedidoId, current);
+  }
+  const movimentosVisiveis = movimentos.filter((movimento) => !isLegacySettlementWithoutDebt(movimento, movimento.pedidoId ? movimentosPorPedido.get(movimento.pedidoId) ?? [] : []));
+  const movimentosByCliente = new Map<string, typeof movimentos>();
+  for (const movimento of movimentosVisiveis) {
     const current = movimentosByCliente.get(movimento.clienteId) ?? [];
     current.push(movimento);
     movimentosByCliente.set(movimento.clienteId, current);
@@ -1265,9 +1400,9 @@ export async function getRelatorioCarteira(period: { start: Date; end: Date }) {
   }
 
   const clientesResumo = clientes.map((cliente) => {
-    const carteira = carteiraByCliente.get(cliente.id);
     const clientPedidos = pedidosByCliente.get(cliente.id) ?? [];
     const clientMovimentos = movimentosByCliente.get(cliente.id) ?? [];
+    const clientMovimentosPeriodo = clientMovimentos.filter((movimento) => movimento.dataMovimento >= period.start && movimento.dataMovimento <= period.end);
     const hasMovimentos = clientMovimentos.length > 0;
     const saldoLegacy = clientPedidos.reduce((sum, pedido) => {
       if (pedido.status === "CANCELADO" || pedido.status === "RASCUNHO") {
@@ -1279,14 +1414,14 @@ export async function getRelatorioCarteira(period: { start: Date; end: Date }) {
       }, new Prisma.Decimal(0));
       return sum.add(totalPagamentos.sub(toDecimal(pedido.valorTotal)));
     }, new Prisma.Decimal(0));
-    const saldoAtual = hasMovimentos ? (carteira?.saldoAtual ?? saldoLegacy) : saldoLegacy;
-    const totalPagoMovimentos = clientMovimentos
+    const saldoAtual = hasMovimentos ? calcularSaldoMovimentos(clientMovimentos) : saldoLegacy;
+    const totalPagoMovimentos = clientMovimentosPeriodo
       .filter((movimento) => ["PAGAMENTO_PARCIAL", "PAGAMENTO_TOTAL"].includes(movimento.tipo))
       .reduce((sum, movimento) => sum.add(movimento.valor), new Prisma.Decimal(0));
-    const totalSobraMovimentos = clientMovimentos
+    const totalSobraMovimentos = clientMovimentosPeriodo
       .filter((movimento) => movimento.tipo === "SOBRA_PAGAMENTO")
       .reduce((sum, movimento) => sum.add(movimento.valor), new Prisma.Decimal(0));
-    const totalAjustesMovimentos = clientMovimentos
+    const totalAjustesMovimentos = clientMovimentosPeriodo
       .filter((movimento) => ["CREDITO_MANUAL", "DEBITO_MANUAL", "AJUSTE"].includes(movimento.tipo))
       .reduce((sum, movimento) => sum.add(movimento.valor), new Prisma.Decimal(0));
 

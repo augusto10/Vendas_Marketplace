@@ -13,10 +13,16 @@ export async function GET(request: Request) {
     if (access.error) return access.error;
 
     const url = new URL(request.url);
+    const startDate = url.searchParams.get("startDate") ?? url.searchParams.get("start");
+    const endDate = url.searchParams.get("endDate") ?? url.searchParams.get("end");
+    const start = startDate ? new Date(`${startDate}T00:00:00`) : undefined;
+    const end = endDate ? new Date(`${endDate}T23:59:59.999`) : undefined;
     const pedidos = await listPedidos({
       status: (url.searchParams.get("status") as AtacadoPedidoStatus | null) ?? undefined,
       clienteId: url.searchParams.get("clienteId") ?? undefined,
-      vendedorId: url.searchParams.get("vendedorId") ?? undefined
+      vendedorId: url.searchParams.get("vendedorId") ?? undefined,
+      start,
+      end
     });
     return ok({ pedidos });
   } catch (error) {

@@ -19,9 +19,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
     const { id } = await context.params;
     const isAdmin = access.user.roles.some((role) => ["master", "admin", "admin_atacado"].includes(role));
+    const shouldCreateOpenMovement =
+      body.status === "AGUARDANDO_PAGAMENTO" ||
+      (body.status === "PAGO" && body.observacao?.toLowerCase().includes("sem pagamento"));
     const pedido = await updatePedidoStatus(id, body, access.user.id, {
       isMaster: isAdmin,
-      createOpenMovement: body.status === "AGUARDANDO_PAGAMENTO"
+      createOpenMovement: shouldCreateOpenMovement
     });
     return ok({ pedido });
   } catch (error) {
