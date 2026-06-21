@@ -503,11 +503,6 @@ function buildPedidoItens(
       ? new Prisma.Decimal(item.precoCaixa)
       : produto.precoPorCaixa;
     const descontoPercentual = new Prisma.Decimal(item.descontoPercentual ?? 0);
-    const changedPrice = !basePrecoCaixa.equals(produto.precoPorCaixa);
-    const changedDiscount = descontoPercentual.gt(0);
-    if ((changedPrice || changedDiscount) && !produto.permiteEditarPrecoPedido && !options.priceOverrideAuthorized) {
-      throw new Error("Alteracao de preco ou desconto precisa de autorizacao de administrador.");
-    }
     const precoCaixa = basePrecoCaixa.mul(new Prisma.Decimal(100).sub(descontoPercentual)).div(100);
     const valorTotal = precoCaixa.mul(item.quantidadeCaixas);
     return {
