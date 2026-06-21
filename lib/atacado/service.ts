@@ -1072,6 +1072,46 @@ function signedMovimentoValue(movimento: { natureza: CarteiraMovimentoNatureza; 
   return signedDelta(movimento.natureza, toDecimal(movimento.valor));
 }
 
+function getPedidoIdsComDebito(movimentos: Array<{ pedidoId?: string | null; natureza: CarteiraMovimentoNatureza }>) {
+  return new Set(
+    movimentos
+      .filter((movimento) => movimento.pedidoId && movimento.natureza === "DEBITO")
+      .map((movimento) => movimento.pedidoId as string)
+  );
+}
+
+function signedMovimentoEfetivoValue(
+  movimento: {
+    natureza: CarteiraMovimentoNatureza;
+    valor: Prisma.Decimal;
+    pedidoId?: string | null;
+    pagamentoId?: string | null;
+    pedido?: { valorTotal: Prisma.Decimal } | null;
+    pagamento?: { valorPago: Prisma.Decimal } | null;
+  },
+  pedidoIdsComDebito: Set<string>
+) {
+  if (movimento.natureza !== "CREDITO") return signedMovimentoValue(movimento);
+  if (!movimento.pedidoId || !movimento.pagamentoId || pedidoIdsComDebito.has(movimento.pedidoId)) return signedMovimentoValue(movimento);
+  if (!movimento.pedido || !movimento.pagamento) return signedMovimentoValue(movimento);
+
+  return Prisma.Decimal.max(new Prisma.Decimal(0), toDecimal(movimento.pagamento.valorPago).sub(toDecimal(movimento.pedido.valorTotal)));
+}
+
+function calcularSaldoMovimentosEfetivos(
+  movimentos: Array<{
+    natureza: CarteiraMovimentoNatureza;
+    valor: Prisma.Decimal;
+    pedidoId?: string | null;
+    pagamentoId?: string | null;
+    pedido?: { valorTotal: Prisma.Decimal } | null;
+    pagamento?: { valorPago: Prisma.Decimal } | null;
+  }>
+) {
+  const pedidoIdsComDebito = getPedidoIdsComDebito(movimentos);
+  return movimentos.reduce((saldo, movimento) => saldo.add(signedMovimentoEfetivoValue(movimento, pedidoIdsComDebito)), new Prisma.Decimal(0));
+}
+
 async function listMovimentosCarteira(tx: Prisma.TransactionClient, filters: CarteiraMovimentoFilters) {
   const dataMovimento = filters.dataInicio || filters.dataFim
     ? {
@@ -1134,10 +1174,11 @@ export async function getExtratoCarteiraCliente(clienteId: string, filters: Omit
     });
     await ensureCarteiraCliente(tx, clienteId);
     const movimentosVisiveis = await listMovimentosCarteiraVisiveis(tx, clienteId);
+    const pedidoIdsComDebito = getPedidoIdsComDebito(movimentosVisiveis);
     let saldoCorrente = new Prisma.Decimal(0);
     const movimentosComSaldo = movimentosVisiveis.map((movimento) => {
       const saldoAnterior = saldoCorrente;
-      saldoCorrente = saldoCorrente.add(signedMovimentoValue(movimento));
+      saldoCorrente = saldoCorrente.add(signedMovimentoEfetivoValue(movimento, pedidoIdsComDebito));
       return {
         ...movimento,
         saldoAnterior,
@@ -1412,7 +1453,10 @@ export async function getRelatorioCarteira(period: { start: Date; end: Date }) {
         observacao: true,
         valor: true,
         dataMovimento: true,
-        dataCompetencia: true
+        dataCompetencia: true,
+        pagamentoId: true,
+        pedido: { select: { valorTotal: true } },
+        pagamento: { select: { valorPago: true } }
       }
     }),
     prisma.atacadoPedido.findMany({
@@ -1468,7 +1512,7 @@ export async function getRelatorioCarteira(period: { start: Date; end: Date }) {
       }, new Prisma.Decimal(0));
       return sum.add(totalPagamentos.sub(toDecimal(pedido.valorTotal)));
     }, new Prisma.Decimal(0));
-    const saldoAtual = hasMovimentos ? calcularSaldoMovimentos(clientMovimentos) : saldoLegacy;
+    const saldoAtual = hasMovimentos ? calcularSaldoMovimentosEfetivos(clientMovimentos) : saldoLegacy;
     const saldoDevedor = saldoAtual.isNegative() ? saldoAtual.abs() : new Prisma.Decimal(0);
     const creditoDisponivel = saldoAtual.isPositive() ? saldoAtual : new Prisma.Decimal(0);
     const totalPagoMovimentos = clientMovimentosPeriodo
