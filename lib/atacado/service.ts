@@ -1051,12 +1051,19 @@ function isLegacySettlementWithoutDebt(movimento: {
   origem: CarteiraMovimentoOrigem;
   pedidoId?: string | null;
   observacao?: string | null;
-}, movimentosDoPedido: Array<{ tipo: CarteiraMovimentoTipo; natureza: CarteiraMovimentoNatureza; origem: CarteiraMovimentoOrigem; observacao?: string | null }>) {
+}, movimentosDoPedido: Array<{ tipo: CarteiraMovimentoTipo; natureza: CarteiraMovimentoNatureza; origem: CarteiraMovimentoOrigem; valor: Prisma.Decimal; observacao?: string | null }>) {
   if (!movimento.pedidoId) return false;
   const hasAutomaticOpening = movimentosDoPedido.some((item) => {
     const observacao = item.observacao?.toLowerCase() ?? "";
     return item.tipo === "PEDIDO_ABERTO_SEM_PAGAMENTO" && observacao.includes("conciliacao do pagamento");
   });
+  const hasOpeningDebit = movimentosDoPedido.some((item) => item.tipo === "PEDIDO_ABERTO_SEM_PAGAMENTO" && item.natureza === "DEBITO");
+  const hasPaymentCredit = movimentosDoPedido.some((item) => ["PAGAMENTO_PARCIAL", "PAGAMENTO_TOTAL"].includes(item.tipo) && item.natureza === "CREDITO");
+  const saldoPedido = movimentosDoPedido.reduce((saldo, item) => saldo.add(signedMovimentoValue(item)), new Prisma.Decimal(0));
+
+  if (hasOpeningDebit && hasPaymentCredit && saldoPedido.eq(0)) {
+    return ["PEDIDO_ABERTO_SEM_PAGAMENTO", "PAGAMENTO_PARCIAL", "PAGAMENTO_TOTAL"].includes(movimento.tipo);
+  }
 
   if (hasAutomaticOpening) {
     return ["PEDIDO_ABERTO_SEM_PAGAMENTO", "PAGAMENTO_PARCIAL", "PAGAMENTO_TOTAL"].includes(movimento.tipo);
