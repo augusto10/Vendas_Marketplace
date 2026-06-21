@@ -1166,9 +1166,9 @@ export async function getExtratoCarteiraCliente(clienteId: string, filters: Omit
       const valor = signedMovimentoValue(movimento);
       return valor.isNegative() ? sum.add(valor.abs()) : sum;
     }, new Prisma.Decimal(0));
-    const saldoDevedor = saldoDevedorPedidos.add(devedorManualAvulso);
-    const creditoDisponivel = creditoPedidos.add(creditoManualAvulso);
-    const saldoAtual = saldoDevedor.gt(0) ? saldoDevedor.neg() : creditoDisponivel;
+    const saldoBrutoDevedor = saldoDevedorPedidos.add(devedorManualAvulso);
+    const creditoBrutoDisponivel = creditoPedidos.add(creditoManualAvulso);
+    const saldoAtual = creditoBrutoDisponivel.sub(saldoBrutoDevedor);
     const pedidosComDebito = new Set(
       movimentosVisiveis
         .filter((movimento) => movimento.pedidoId && movimento.natureza === "DEBITO")
@@ -1539,9 +1539,11 @@ export async function getRelatorioCarteira(period: { start: Date; end: Date }) {
       const valor = signedMovimentoValue(movimento);
       return valor.isNegative() ? sum.add(valor.abs()) : sum;
     }, new Prisma.Decimal(0));
-    const saldoDevedor = saldoDevedorPedidos.add(devedorManualAvulso);
-    const creditoDisponivel = creditoPedidos.add(creditoManualAvulso);
-    const saldoAtual = saldoDevedor.gt(0) ? saldoDevedor.neg() : creditoDisponivel;
+    const saldoBrutoDevedor = saldoDevedorPedidos.add(devedorManualAvulso);
+    const creditoBrutoDisponivel = creditoPedidos.add(creditoManualAvulso);
+    const saldoAtual = creditoBrutoDisponivel.sub(saldoBrutoDevedor);
+    const saldoDevedor = saldoAtual.isNegative() ? saldoAtual.abs() : new Prisma.Decimal(0);
+    const creditoDisponivel = saldoAtual.isPositive() ? saldoAtual : new Prisma.Decimal(0);
     const totalPagoMovimentos = clientMovimentosPeriodo
       .filter((movimento) => ["PAGAMENTO_PARCIAL", "PAGAMENTO_TOTAL"].includes(movimento.tipo))
       .reduce((sum, movimento) => sum.add(movimento.valor), new Prisma.Decimal(0));
