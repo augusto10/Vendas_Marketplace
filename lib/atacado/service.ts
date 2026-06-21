@@ -947,18 +947,27 @@ export async function liberarEntregaExpedicao(id: string, userId: string) {
     if (!["PENDENTE", "EM_ROTA"].includes(entregaAtual.status)) {
       throw new Error("Entrega nao esta disponivel para aceite.");
     }
+    if (entregaAtual.motoristaId && entregaAtual.motoristaId !== userId) {
+      throw new Error("Entrega atribuida a outro motorista.");
+    }
 
     const entrega =
       entregaAtual.status === "PENDENTE"
         ? await tx.atacadoEntrega.update({
             where: { id },
-            data: { status: "EM_ROTA" },
+            data: { status: "EM_ROTA", motoristaId: userId },
             include: { pedido: { include: { cliente: true } } }
           })
-        : await tx.atacadoEntrega.findUniqueOrThrow({
-            where: { id },
-            include: { pedido: { include: { cliente: true } } }
-          });
+        : entregaAtual.motoristaId
+          ? await tx.atacadoEntrega.findUniqueOrThrow({
+              where: { id },
+              include: { pedido: { include: { cliente: true } } }
+            })
+          : await tx.atacadoEntrega.update({
+              where: { id },
+              data: { motoristaId: userId },
+              include: { pedido: { include: { cliente: true } } }
+            });
 
     if (entregaAtual.pedido.status !== "EM_ENTREGA") {
       await tx.atacadoPedido.update({ where: { id: entregaAtual.pedidoId }, data: { status: "EM_ENTREGA" } });
@@ -987,7 +996,7 @@ export async function concluirEntrega(id: string, data: ConcluirEntregaInput, us
       pedido: { select: { status: true } }
     }
   });
-  if (current.motoristaId !== userId) {
+  if (current.motoristaId && current.motoristaId !== userId) {
     throw new Error("Entrega nao atribuida a este motorista.");
   }
   if (current.status !== "EM_ROTA") {
@@ -1009,6 +1018,7 @@ export async function concluirEntrega(id: string, data: ConcluirEntregaInput, us
       where: { id },
       data: {
         status: "ENTREGUE",
+        motoristaId: current.motoristaId ?? userId,
         reciboUrl: uploaded.url,
         reciboPublicId: uploaded.publicId,
         latitude: data.latitude == null ? undefined : new Prisma.Decimal(data.latitude),
