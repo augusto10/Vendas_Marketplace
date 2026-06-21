@@ -1198,6 +1198,8 @@ export async function getExtratoCarteiraCliente(clienteId: string, filters: Omit
       return {
         ...movimento,
         valorEfetivo,
+        entrada: valorEfetivo.isPositive() ? valorEfetivo : new Prisma.Decimal(0),
+        saida: valorEfetivo.isNegative() ? valorEfetivo.abs() : new Prisma.Decimal(0),
         saldoAnterior,
         saldoPosterior: saldoCorrente
       };

@@ -41,8 +41,18 @@ export const PERMISSIONS = [
 
 export type PermissionKey = (typeof PERMISSIONS)[number];
 
+const rolePermissionFallbacks: Record<string, PermissionKey[]> = {
+  vendas_atacado: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create"],
+  vendas: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create"],
+  vendedor: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create"],
+  financeiro_atacado: ["atacado.financeiro.view", "atacado.financeiro.update"],
+  financeiro: ["atacado.financeiro.view", "atacado.financeiro.update"],
+  motorista_atacado: ["atacado.entregas.view", "atacado.entregas.update"],
+  motorista: ["atacado.entregas.view", "atacado.entregas.update"]
+};
+
 export function hasPermission(user: { roles: string[]; permissions: string[] } | null, permission: PermissionKey) {
   if (!user) return false;
   if (user.roles.includes("master") || user.roles.includes("admin")) return true;
-  return user.permissions.includes(permission);
+  return user.permissions.includes(permission) || user.roles.some((role) => rolePermissionFallbacks[role]?.includes(permission));
 }

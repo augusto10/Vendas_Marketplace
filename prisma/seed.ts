@@ -63,6 +63,8 @@ const rolePermissions: Record<string, string[]> = {
   visualizador: ["dashboard.view", "finance.view", "fiscal.view", "fees.view", "reports.view"],
   admin_atacado: permissions.filter((key) => key.startsWith("atacado.")),
   vendas_atacado: [
+    "atacado.clientes.view",
+    "atacado.clientes.manage",
     "atacado.produtos.view",
     "atacado.pedidos.view",
     "atacado.pedidos.create"
