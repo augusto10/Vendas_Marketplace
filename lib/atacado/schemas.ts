@@ -31,6 +31,10 @@ export const produtoSchema = z.object({
 export const pedidoItemSchema = z.object({
   produtoId: z.string().uuid(),
   quantidadeCaixas: z.coerce.number().int().positive(),
+  quantidadePares: z.coerce.number().int().positive().optional().nullable(),
+  quantidadePorCaixa: z.coerce.number().int().positive().optional().nullable(),
+  unidadesPorEmbalagem: z.coerce.number().int().positive().optional().nullable(),
+  tipoEmbalagem: z.enum(["SACO", "CAIXA"]).optional().nullable(),
   precoCaixa: z.coerce.number().nonnegative().optional().nullable(),
   descontoPercentual: z.coerce.number().min(0).max(100).default(0),
   observacao: z.string().optional().nullable()

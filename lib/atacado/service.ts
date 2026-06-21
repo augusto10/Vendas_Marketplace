@@ -498,7 +498,8 @@ function buildPedidoItens(
   return data.itens.map((item) => {
     const produto = produtosById.get(item.produtoId);
     if (!produto) throw new Error("Produto invalido no pedido.");
-    const quantidadePares = item.quantidadeCaixas * produto.quantidadePorCaixa;
+    const quantidadePorEmbalagem = item.quantidadePorCaixa ?? item.unidadesPorEmbalagem ?? produto.quantidadePorCaixa;
+    const quantidadePares = item.quantidadePares ?? item.quantidadeCaixas * quantidadePorEmbalagem;
     const basePrecoCaixa = item.precoCaixa !== null && item.precoCaixa !== undefined
       ? new Prisma.Decimal(item.precoCaixa)
       : produto.precoPorCaixa;
