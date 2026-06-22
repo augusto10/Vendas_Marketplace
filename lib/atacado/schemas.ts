@@ -80,7 +80,7 @@ export const entregaSchema = z.object({
 export const concluirEntregaSchema = z.object({
   latitude: z.coerce.number().optional().nullable(),
   longitude: z.coerce.number().optional().nullable(),
-  recebedorNome: z.string().trim().min(2, "Informe o nome de quem recebeu."),
+  recebedorNome: z.string().trim().min(2, "Informe o nome de quem recebeu para finalizar a entrega."),
   observacao: z.string().optional().nullable()
 });
 
