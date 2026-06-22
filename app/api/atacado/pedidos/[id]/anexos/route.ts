@@ -1,6 +1,6 @@
 import { type AtacadoAnexoTipo } from "@prisma/client";
 import { fail, handleApiError, ok } from "@/lib/api-response";
-import { requirePermission } from "@/lib/atacado/permissions";
+import { requireAnyPermission } from "@/lib/atacado/permissions";
 import { addPedidoAnexo } from "@/lib/atacado/service";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ const tipos = new Set(["PEDIDO", "SEPARACAO", "COMPROVANTE_PIX", "ENTREGA", "ASS
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const access = await requirePermission("atacado.pedidos.update", request);
+    const access = await requireAnyPermission(["atacado.pedidos.update", "atacado.financeiro.update"], request);
     if (access.error || !access.user) return access.error;
 
     const { id } = await context.params;
