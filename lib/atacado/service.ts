@@ -515,6 +515,7 @@ export async function createPedido(data: PedidoInput, userId: string, options: P
         numero,
         clienteId: data.clienteId,
         vendedorId: data.vendedorId ?? userId,
+        status: "AGUARDANDO_SEPARACAO",
         observacao: data.observacao,
         valorTotal,
         itens: { create: itens }
