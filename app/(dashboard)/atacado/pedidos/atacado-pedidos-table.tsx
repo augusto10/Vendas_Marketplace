@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AtacadoStatusBadge, statusLabel } from "@/features/atacado/status";
@@ -59,8 +60,51 @@ export type AtacadoPedidoRow = {
 
 const lockedStatuses = ["EM_ENTREGA", "ENTREGUE", "CANCELADO"];
 
-export function AtacadoPedidosTable({ pedidos, isMaster }: { pedidos: AtacadoPedidoRow[]; isMaster: boolean }) {
+export function AtacadoPedidosTable({
+  pedidos,
+  isMaster,
+  canManagePedidos
+}: {
+  pedidos: AtacadoPedidoRow[];
+  isMaster: boolean;
+  canManagePedidos: boolean;
+}) {
+  const router = useRouter();
   const [selected, setSelected] = useState<AtacadoPedidoRow | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<AtacadoPedidoRow | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelPending, setCancelPending] = useState(false);
+
+  function canCancelPedido(status: string) {
+    return canManagePedidos && !lockedStatuses.includes(status);
+  }
+
+  async function confirmCancelPedido() {
+    if (!cancelTarget) return;
+
+    setCancelPending(true);
+    try {
+      const response = await fetch(`/api/atacado/pedidos/${cancelTarget.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "CANCELADO",
+          observacao: cancelReason.trim() ? `Cancelado pelo administrador: ${cancelReason.trim()}` : "Cancelado pelo administrador"
+        })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error?.message ?? "Nao foi possivel cancelar o pedido.");
+      }
+
+      setCancelTarget(null);
+      setCancelReason("");
+      router.refresh();
+    } finally {
+      setCancelPending(false);
+    }
+  }
 
   return (
     <>
@@ -79,24 +123,31 @@ export function AtacadoPedidosTable({ pedidos, isMaster }: { pedidos: AtacadoPed
 
             return (
               <TableRow key={pedido.id}>
-                <TableCell className="font-semibold" title={pedido.numero}>{shortPedidoNumber(pedido.numero)}</TableCell>
-                <TableCell><AtacadoStatusBadge status={pedido.status} /></TableCell>
+                <TableCell className="font-semibold" title={pedido.numero}>
+                  {shortPedidoNumber(pedido.numero)}
+                </TableCell>
+                <TableCell>
+                  <AtacadoStatusBadge status={pedido.status} />
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button type="button" variant="outline" disabled={!canOpen} onClick={() => setSelected(pedido)}>
                       Detalhe
                     </Button>
-                    {pedido.status !== "CANCELADO" && pedido.status !== "ENTREGUE" && (
+                    {pedido.status !== "CANCELADO" && pedido.status !== "ENTREGUE" ? (
                       <Link href={`/atacado/pedidos/${pedido.id}/separacao`}>
                         <Button type="button" variant="secondary" size="sm" className="flex items-center gap-2">
                           <Package className="h-4 w-4" />
-                          Separação
+                          Separacao
                         </Button>
                       </Link>
-                    )}
-                    {!canOpen ? (
-                      <span className="text-xs text-muted-foreground">Somente Master</span>
                     ) : null}
+                    {canCancelPedido(pedido.status) ? (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setCancelTarget(pedido)}>
+                        Cancelar
+                      </Button>
+                    ) : null}
+                    {!canOpen ? <span className="text-xs text-muted-foreground">Somente Master</span> : null}
                   </div>
                 </TableCell>
               </TableRow>
@@ -104,12 +155,64 @@ export function AtacadoPedidosTable({ pedidos, isMaster }: { pedidos: AtacadoPed
           })}
         </TableBody>
       </Table>
-      {selected ? <PedidoDetailsModal pedido={selected} onClose={() => setSelected(null)} /> : null}
+
+      {selected ? (
+        <PedidoDetailsModal
+          pedido={selected}
+          onClose={() => setSelected(null)}
+          canCancelPedido={canCancelPedido(selected.status)}
+          onRequestCancel={() => setCancelTarget(selected)}
+        />
+      ) : null}
+
+      {cancelTarget ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-lg border bg-background shadow-lg">
+            <div className="border-b p-4">
+              <div className="text-sm text-muted-foreground">Cancelar pedido</div>
+              <h2 className="text-xl font-semibold">{cancelTarget.numero}</h2>
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void confirmCancelPedido();
+              }}
+              className="space-y-4 p-4"
+            >
+              <p className="text-sm text-muted-foreground">O pedido vai sair da fila operacional. Use isso apenas antes da entrega final.</p>
+              <textarea
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                placeholder="Motivo do cancelamento (opcional)"
+                className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none"
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelPending}>
+                  Voltar
+                </Button>
+                <Button type="submit" disabled={cancelPending}>
+                  {cancelPending ? "Cancelando..." : "Confirmar cancelamento"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
 
-function PedidoDetailsModal({ pedido, onClose }: { pedido: AtacadoPedidoRow; onClose: () => void }) {
+function PedidoDetailsModal({
+  pedido,
+  onClose,
+  canCancelPedido,
+  onRequestCancel
+}: {
+  pedido: AtacadoPedidoRow;
+  onClose: () => void;
+  canCancelPedido: boolean;
+  onRequestCancel: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
       <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-lg border bg-background shadow-lg">
@@ -118,7 +221,9 @@ function PedidoDetailsModal({ pedido, onClose }: { pedido: AtacadoPedidoRow; onC
             <div className="text-sm text-muted-foreground">Pedido</div>
             <h2 className="text-xl font-semibold">{pedido.numero}</h2>
           </div>
-          <Button type="button" variant="outline" onClick={onClose}>Fechar</Button>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Fechar
+          </Button>
         </div>
 
         <div className="grid gap-4 p-4 lg:grid-cols-3">
@@ -148,6 +253,16 @@ function PedidoDetailsModal({ pedido, onClose }: { pedido: AtacadoPedidoRow; onC
               ["Observacao", pedido.observacao || "-"]
             ]}
           />
+        </div>
+
+        <div className="px-4 pb-4">
+          <div className="flex flex-wrap gap-2">
+            {canCancelPedido && pedido.status !== "CANCELADO" && pedido.status !== "ENTREGUE" ? (
+              <Button type="button" variant="outline" onClick={onRequestCancel}>
+                Cancelar pedido
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         <div className="px-4 pb-4">
@@ -186,16 +301,28 @@ function PedidoDetailsModal({ pedido, onClose }: { pedido: AtacadoPedidoRow; onC
           <div className="rounded-lg border">
             <div className="border-b p-3 font-medium">Pagamentos</div>
             <Table>
-              <TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Status</TableHead><TableHead>Valor</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Valor</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
-                {pedido.pagamentos.length ? pedido.pagamentos.map((pagamento) => (
-                  <TableRow key={`${pagamento.registradoEm}-${pagamento.valorPago}`}>
-                    <TableCell>{formatDate(pagamento.registradoEm)}</TableCell>
-                    <TableCell>{statusLabel(pagamento.status)}</TableCell>
-                    <TableCell>{currency(pagamento.valorPago)}</TableCell>
+                {pedido.pagamentos.length ? (
+                  pedido.pagamentos.map((pagamento) => (
+                    <TableRow key={`${pagamento.registradoEm}-${pagamento.valorPago}`}>
+                      <TableCell>{formatDate(pagamento.registradoEm)}</TableCell>
+                      <TableCell>{statusLabel(pagamento.status)}</TableCell>
+                      <TableCell>{currency(pagamento.valorPago)}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-muted-foreground">
+                      Sem pagamento registrado.
+                    </TableCell>
                   </TableRow>
-                )) : (
-                  <TableRow><TableCell colSpan={3} className="text-muted-foreground">Sem pagamento registrado.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -203,16 +330,28 @@ function PedidoDetailsModal({ pedido, onClose }: { pedido: AtacadoPedidoRow; onC
           <div className="rounded-lg border">
             <div className="border-b p-3 font-medium">Entregas</div>
             <Table>
-              <TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Tipo</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
-                {pedido.entregas.length ? pedido.entregas.map((entrega) => (
-                  <TableRow key={`${entrega.createdAt}-${entrega.status}`}>
-                    <TableCell>{formatDate(entrega.createdAt)}</TableCell>
-                    <TableCell>{statusLabel(entrega.tipo)}</TableCell>
-                    <TableCell>{statusLabel(entrega.status)}</TableCell>
+                {pedido.entregas.length ? (
+                  pedido.entregas.map((entrega) => (
+                    <TableRow key={`${entrega.createdAt}-${entrega.status}`}>
+                      <TableCell>{formatDate(entrega.createdAt)}</TableCell>
+                      <TableCell>{statusLabel(entrega.tipo)}</TableCell>
+                      <TableCell>{statusLabel(entrega.status)}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-muted-foreground">
+                      Sem entrega registrada.
+                    </TableCell>
                   </TableRow>
-                )) : (
-                  <TableRow><TableCell colSpan={3} className="text-muted-foreground">Sem entrega registrada.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
