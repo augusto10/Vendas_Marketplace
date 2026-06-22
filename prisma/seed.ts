@@ -70,6 +70,7 @@ const rolePermissions: Record<string, string[]> = {
     "atacado.pedidos.create"
   ],
   separacao_atacado: [
+    "atacado.produtos.view",
     "atacado.pedidos.view",
     "atacado.separacao.view",
     "atacado.separacao.update",
