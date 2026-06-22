@@ -37,11 +37,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return fail("VALIDATION_ERROR", "Informe a observacao de como foi pago ou anexe o comprovante.", 400);
     }
 
-    const isAdmin = access.user.roles.some((role) => ["master", "admin", "admin_atacado"].includes(role));
-    if (!isAdmin) {
-      return fail("FORBIDDEN", "Somente administrador pode adicionar saldo na carteira.", 403);
-    }
-
     const user = await prisma.user.findUnique({
       where: { id: access.user.id },
       select: { passwordHash: true }

@@ -166,12 +166,8 @@ async function backfillCarteiraClienteHistorica(tx: Prisma.TransactionClient, cl
   for (const pedido of pedidos) {
     const movimentosPedido = await tx.atacadoCarteiraMovimento.findMany({
       where: { pedidoId: pedido.id },
-      select: { id: true }
+      select: { id: true, natureza: true, tipo: true }
     });
-
-    if (movimentosPedido.length > 0) {
-      continue;
-    }
 
     if (pedido.status === "CANCELADO") {
       continue;
@@ -182,8 +178,10 @@ async function backfillCarteiraClienteHistorica(tx: Prisma.TransactionClient, cl
       if (pagamento.status === "PENDENTE") return sum;
       return sum.add(toDecimal(pagamento.valorPago));
     }, new Prisma.Decimal(0));
+    const hasDebitoPedido = movimentosPedido.some((movimento) => movimento.natureza === "DEBITO" && movimento.tipo === "PEDIDO_ABERTO_SEM_PAGAMENTO");
+    const hasSobraPedido = movimentosPedido.some((movimento) => movimento.tipo === "SOBRA_PAGAMENTO");
 
-    if (totalPago.lt(pedido.valorTotal)) {
+    if (!hasDebitoPedido && totalPago.lt(pedido.valorTotal)) {
       await createCarteiraMovimento(tx, {
         clienteId,
         pedidoId: pedido.id,
@@ -198,7 +196,7 @@ async function backfillCarteiraClienteHistorica(tx: Prisma.TransactionClient, cl
       });
     }
 
-    if (totalPago.gt(pedido.valorTotal)) {
+    if (!hasSobraPedido && totalPago.gt(pedido.valorTotal)) {
       const ultimoPagamento = pedido.pagamentos.filter((pagamento) => pagamento.status !== "PENDENTE").at(-1);
       if (ultimoPagamento) {
         await createCarteiraMovimento(tx, {
@@ -1096,6 +1094,7 @@ type MovimentoCarteiraCalculo = {
   pagamentoId?: string | null;
   natureza: CarteiraMovimentoNatureza;
   valor: Prisma.Decimal;
+  pedido?: { valorTotal: Prisma.Decimal } | null;
 };
 
 function calcularValoresEfetivosMovimentos(movimentos: MovimentoCarteiraCalculo[]) {
@@ -1118,8 +1117,10 @@ function calcularValoresEfetivosMovimentos(movimentos: MovimentoCarteiraCalculo[
     const creditos = grupo.filter((movimento) => movimento.natureza === "CREDITO");
     const totalDebito = debitos.reduce((sum, movimento) => sum.add(toDecimal(movimento.valor)), new Prisma.Decimal(0));
     const totalCredito = creditos.reduce((sum, movimento) => sum.add(toDecimal(movimento.valor)), new Prisma.Decimal(0));
-    let debitoRestante = Prisma.Decimal.max(new Prisma.Decimal(0), totalDebito.sub(totalCredito));
-    let creditoRestante = Prisma.Decimal.max(new Prisma.Decimal(0), totalCredito.sub(totalDebito));
+    const valorPedido = grupo.find((movimento) => movimento.pedido?.valorTotal)?.pedido?.valorTotal;
+    const debitoComparacao = totalDebito.eq(0) && valorPedido ? toDecimal(valorPedido) : totalDebito;
+    let debitoRestante = Prisma.Decimal.max(new Prisma.Decimal(0), debitoComparacao.sub(totalCredito));
+    let creditoRestante = Prisma.Decimal.max(new Prisma.Decimal(0), totalCredito.sub(debitoComparacao));
 
     for (const movimento of grupo) {
       if (movimento.natureza === "DEBITO") {
