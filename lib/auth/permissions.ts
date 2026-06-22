@@ -45,8 +45,8 @@ const rolePermissionFallbacks: Record<string, PermissionKey[]> = {
   vendas_atacado: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create"],
   vendas: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create"],
   vendedor: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create"],
-  financeiro_atacado: ["atacado.financeiro.view", "atacado.financeiro.update"],
-  financeiro: ["atacado.financeiro.view", "atacado.financeiro.update"],
+  financeiro_atacado: ["atacado.clientes.view", "atacado.produtos.view", "atacado.pedidos.view", "atacado.entregas.view", "atacado.financeiro.view", "atacado.financeiro.update"],
+  financeiro: ["atacado.clientes.view", "atacado.produtos.view", "atacado.pedidos.view", "atacado.entregas.view", "atacado.financeiro.view", "atacado.financeiro.update"],
   motorista_atacado: ["atacado.entregas.view", "atacado.entregas.update"],
   motorista: ["atacado.entregas.view", "atacado.entregas.update"]
 };

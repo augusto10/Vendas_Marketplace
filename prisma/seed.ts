@@ -77,7 +77,10 @@ const rolePermissions: Record<string, string[]> = {
     "atacado.entregas.update"
   ],
   financeiro_atacado: [
+    "atacado.clientes.view",
+    "atacado.produtos.view",
     "atacado.pedidos.view",
+    "atacado.entregas.view",
     "atacado.financeiro.view",
     "atacado.financeiro.update"
   ],
