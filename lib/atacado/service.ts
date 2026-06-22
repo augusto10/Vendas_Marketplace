@@ -1182,14 +1182,24 @@ export async function getCarteiraCliente(clienteId: string) {
 }
 
 export async function getSaldoCliente(clienteId: string) {
-  const { carteira } = await getCarteiraCliente(clienteId);
-  return {
-    clienteId,
-    saldoAtual: carteira.saldoAtual,
-    saldoBloqueado: carteira.saldoBloqueado,
-    saldoDevedor: carteira.saldoAtual.isNegative() ? carteira.saldoAtual.abs() : new Prisma.Decimal(0),
-    creditoDisponivel: carteira.saldoAtual.isPositive() ? carteira.saldoAtual : new Prisma.Decimal(0)
-  };
+  return prisma.$transaction(async (tx) => {
+    await backfillCarteiraClienteHistorica(tx, clienteId);
+    const carteira = await tx.atacadoCarteiraCliente.upsert({
+      where: { clienteId },
+      update: {},
+      create: { clienteId }
+    });
+    const movimentosVisiveis = await listMovimentosCarteiraVisiveis(tx, clienteId);
+    const saldoAtual = calcularSaldoMovimentos(movimentosVisiveis);
+
+    return {
+      clienteId,
+      saldoAtual,
+      saldoBloqueado: carteira.saldoBloqueado,
+      saldoDevedor: saldoAtual.isNegative() ? saldoAtual.abs() : new Prisma.Decimal(0),
+      creditoDisponivel: saldoAtual.isPositive() ? saldoAtual : new Prisma.Decimal(0)
+    };
+  });
 }
 
 export async function getExtratoCarteiraCliente(clienteId: string, filters: Omit<CarteiraMovimentoFilters, "clienteId"> = {}) {
