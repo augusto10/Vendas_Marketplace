@@ -827,6 +827,109 @@ export async function registerPagamento(id: string, data: PagamentoInput, userId
   return prisma.$transaction(async (tx) => registerPagamentoTx(tx, id, data, userId, uploaded));
 }
 
+export async function aplicarCreditoCarteiraPedido(id: string, userId: string) {
+  return prisma.$transaction(async (tx) => {
+    const pedido = await tx.atacadoPedido.findUniqueOrThrow({
+      where: { id },
+      select: {
+        id: true,
+        numero: true,
+        clienteId: true,
+        status: true,
+        valorTotal: true
+      }
+    });
+
+    if (["PAGO", "EM_ENTREGA", "ENTREGUE", "CANCELADO"].includes(pedido.status)) {
+      throw new Error("Pedido ja esta quitado, em rota, entregue ou cancelado.");
+    }
+
+    await backfillCarteiraClienteHistorica(tx, pedido.clienteId);
+    await ensureCarteiraCliente(tx, pedido.clienteId);
+
+    const movimentosVisiveis = await listMovimentosCarteiraVisiveis(tx, pedido.clienteId);
+    const saldoAtual = calcularSaldoMovimentos(movimentosVisiveis);
+    let saldoPedido = await sumMovimentosPedido(tx, id);
+    const pedidoJaEntrouNoSaldo = saldoPedido.isNegative();
+    const creditoDisponivel = pedidoJaEntrouNoSaldo
+      ? Prisma.Decimal.max(new Prisma.Decimal(0), saldoAtual.add(saldoPedido.abs()))
+      : Prisma.Decimal.max(new Prisma.Decimal(0), saldoAtual);
+
+    if (saldoPedido.eq(0)) {
+      await createCarteiraMovimento(tx, {
+        clienteId: pedido.clienteId,
+        pedidoId: id,
+        tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO",
+        natureza: "DEBITO",
+        valor: pedido.valorTotal,
+        origem: "PEDIDO",
+        criadoPorUsuarioId: userId,
+        observacao: "Pedido aberto para uso de credito da carteira.",
+        dataCompetencia: new Date(),
+        dataMovimento: new Date(),
+        idempotencyKey: `pedido:${id}:abertura`
+      });
+      saldoPedido = toDecimal(pedido.valorTotal).neg();
+    }
+
+    if (!saldoPedido.isNegative()) {
+      throw new Error("Pedido nao possui saldo devedor para abater com carteira.");
+    }
+
+    if (!creditoDisponivel.isPositive()) {
+      throw new Error("Cliente nao possui credito disponivel na carteira.");
+    }
+
+    const saldoDevedor = saldoPedido.abs();
+    const valorAplicado = Prisma.Decimal.min(creditoDisponivel, saldoDevedor);
+    const tipoAplicacao = valorAplicado.eq(saldoDevedor) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
+    const observacao = tipoAplicacao === "PAGAMENTO_TOTAL"
+      ? "Pedido quitado com credito da carteira."
+      : "Credito da carteira aplicado parcialmente no pedido.";
+
+    await createCarteiraMovimento(tx, {
+      clienteId: pedido.clienteId,
+      tipo: "DEBITO_MANUAL",
+      natureza: "DEBITO",
+      valor: valorAplicado,
+      origem: "SISTEMA",
+      criadoPorUsuarioId: userId,
+      observacao: `Credito da carteira utilizado no pedido ${pedido.numero}.`,
+      dataCompetencia: new Date(),
+      dataMovimento: new Date(),
+      idempotencyKey: `pedido:${id}:uso-credito-carteira:consumo`
+    });
+
+    await createCarteiraMovimento(tx, {
+      clienteId: pedido.clienteId,
+      pedidoId: id,
+      tipo: tipoAplicacao,
+      natureza: "CREDITO",
+      valor: valorAplicado,
+      origem: "SISTEMA",
+      criadoPorUsuarioId: userId,
+      observacao,
+      dataCompetencia: new Date(),
+      dataMovimento: new Date(),
+      idempotencyKey: `pedido:${id}:uso-credito-carteira:pagamento`
+    });
+
+    const saldoAposAplicacao = await sumMovimentosPedido(tx, id);
+    const pedidoAtualizado = await updatePedidoStatusTx(tx, id, {
+      status: saldoAposAplicacao.isNegative() ? "AGUARDANDO_PAGAMENTO" : "PAGO",
+      observacao: saldoAposAplicacao.isNegative()
+        ? "Credito da carteira aplicado parcialmente"
+        : "Saldo aplicado pela carteira e pedido quitado"
+    }, userId, { isMaster: true, createOpenMovement: false });
+
+    return {
+      pedido: pedidoAtualizado,
+      valorAplicado,
+      saldoPedido: saldoAposAplicacao
+    };
+  });
+}
+
 export function createEntrega(id: string, data: EntregaInput, userId: string) {
   return prisma.atacadoEntrega.create({
     data: {
