@@ -1,5 +1,5 @@
 import { ok, handleApiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/atacado/permissions";
+import { requireAnyPermission } from "@/lib/atacado/permissions";
 import { getSaldoCliente } from "@/lib/atacado/service";
 
 export const runtime = "nodejs";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const access = await requirePermission("atacado.financeiro.view", request);
+    const access = await requireAnyPermission(["atacado.financeiro.view", "atacado.clientes.view", "atacado.pedidos.create"], request);
     if (access.error) return access.error;
 
     const { id } = await context.params;
