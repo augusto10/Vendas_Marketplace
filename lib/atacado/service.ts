@@ -816,7 +816,9 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
       });
     }
 
-    await updatePedidoStatusTx(tx, id, { status: statusFinal === "PARCIAL" ? "AGUARDANDO_PAGAMENTO" : "PAGO", observacao: statusFinal === "PARCIAL" ? "Pagamento parcial registrado" : "Pagamento confirmado" }, userId, { isMaster: true, createOpenMovement: false });
+    if (!["EM_ENTREGA", "ENTREGUE"].includes(pedido.status)) {
+      await updatePedidoStatusTx(tx, id, { status: statusFinal === "PARCIAL" ? "AGUARDANDO_PAGAMENTO" : "PAGO", observacao: statusFinal === "PARCIAL" ? "Pagamento parcial registrado" : "Pagamento confirmado" }, userId, { isMaster: true, createOpenMovement: false });
+    }
   }
 
   return pagamento;
@@ -948,7 +950,7 @@ export function listPedidosLiberadosParaEntrega() {
   return prisma.atacadoPedido.findMany({
     where: {
       status: "PAGO",
-      entregas: { none: { status: { in: ["PENDENTE", "EM_ROTA"] } } }
+      entregas: { none: { status: { in: ["PENDENTE", "EM_ROTA", "ENTREGUE"] } } }
     },
     include: {
       cliente: true,
