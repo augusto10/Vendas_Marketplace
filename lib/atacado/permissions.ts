@@ -3,13 +3,19 @@ import { fail } from "@/lib/api-response";
 import { hasPermission, type PermissionKey } from "@/lib/auth/permissions";
 import { getBearerToken, verifyMobileToken } from "@/lib/mobile/token";
 
-export async function requirePermission(permission: PermissionKey, request?: Request) {
-  const session = await auth();
-  let user = session?.user ?? null;
+type PermissionUser = {
+  id: string;
+  roles: string[];
+  permissions: string[];
+};
 
-  if (!user && request) {
-    const token = getBearerToken(request);
-    user = token ? await verifyMobileToken(token) : null;
+export async function requirePermission(permission: PermissionKey, request?: Request) {
+  const token = request ? getBearerToken(request) : null;
+  let user: PermissionUser | null = token ? await verifyMobileToken(token) : null;
+
+  if (!user) {
+    const session = await auth();
+    user = session?.user ?? null;
   }
 
   if (!user) {
@@ -24,12 +30,12 @@ export async function requirePermission(permission: PermissionKey, request?: Req
 }
 
 export async function requireAnyPermission(permissions: PermissionKey[], request?: Request) {
-  const session = await auth();
-  let user = session?.user ?? null;
+  const token = request ? getBearerToken(request) : null;
+  let user: PermissionUser | null = token ? await verifyMobileToken(token) : null;
 
-  if (!user && request) {
-    const token = getBearerToken(request);
-    user = token ? await verifyMobileToken(token) : null;
+  if (!user) {
+    const session = await auth();
+    user = session?.user ?? null;
   }
 
   if (!user) {
