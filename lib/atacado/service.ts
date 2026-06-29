@@ -493,6 +493,48 @@ function buildPedidoItens(
   });
 }
 
+async function syncCarteiraPedidoEditado(
+  tx: Prisma.TransactionClient,
+  params: {
+    pedidoId: string;
+    clienteId: string;
+    valorAnterior: Prisma.Decimal;
+    valorAtual: Prisma.Decimal;
+    userId: string;
+  }
+) {
+  const diferenca = params.valorAtual.sub(params.valorAnterior);
+  if (diferenca.eq(0)) return;
+
+  const hasDebitMovement = await tx.atacadoCarteiraMovimento.findFirst({
+    where: {
+      pedidoId: params.pedidoId,
+      clienteId: params.clienteId,
+      natureza: "DEBITO"
+    },
+    select: { id: true }
+  });
+
+  if (!hasDebitMovement) return;
+
+  const aumentoValor = diferenca.gt(0);
+  await createCarteiraMovimento(tx, {
+    clienteId: params.clienteId,
+    pedidoId: params.pedidoId,
+    tipo: "AJUSTE",
+    natureza: aumentoValor ? "DEBITO" : "CREDITO",
+    valor: diferenca.abs(),
+    origem: "AJUSTE",
+    criadoPorUsuarioId: params.userId,
+    observacao: aumentoValor
+      ? "Ajuste automatico por aumento do valor do pedido editado."
+      : "Ajuste automatico por reducao do valor do pedido editado.",
+    dataCompetencia: new Date(),
+    dataMovimento: new Date(),
+    idempotencyKey: undefined
+  });
+}
+
 export async function createPedido(data: PedidoInput, userId: string, options: PedidoItemBuildOptions = {}) {
   const produtos = await prisma.atacadoProduto.findMany({
     where: { id: { in: data.itens.map((item) => item.produtoId) } }
@@ -542,7 +584,7 @@ export async function updatePedido(id: string, data: PedidoInput, userId: string
   return prisma.$transaction(async (tx) => {
     const current = await tx.atacadoPedido.findUniqueOrThrow({
       where: { id },
-      select: { status: true }
+      select: { status: true, clienteId: true, valorTotal: true }
     });
 
     if (["EM_ENTREGA", "ENTREGUE", "CANCELADO"].includes(current.status)) {
@@ -570,6 +612,14 @@ export async function updatePedido(id: string, data: PedidoInput, userId: string
       }
     });
 
+    await syncCarteiraPedidoEditado(tx, {
+      pedidoId: id,
+      clienteId: current.clienteId,
+      valorAnterior: toDecimal(current.valorTotal),
+      valorAtual: valorTotal,
+      userId
+    });
+
     await tx.atacadoHistoricoStatus.create({
       data: {
         pedidoId: id,
@@ -580,6 +630,46 @@ export async function updatePedido(id: string, data: PedidoInput, userId: string
       }
     });
 
+    return pedido;
+  });
+}
+
+export async function deletePedido(id: string) {
+  return prisma.$transaction(async (tx) => {
+    const pedido = await tx.atacadoPedido.findUnique({
+      where: { id },
+      select: { id: true, numero: true }
+    });
+
+    if (!pedido) return null;
+
+    const movimentos = await tx.atacadoCarteiraMovimento.findMany({
+      where: { pedidoId: id },
+      select: { clienteId: true, natureza: true, valor: true }
+    });
+    const deltaPorCliente = new Map<string, Prisma.Decimal>();
+
+    for (const movimento of movimentos) {
+      const current = deltaPorCliente.get(movimento.clienteId) ?? new Prisma.Decimal(0);
+      deltaPorCliente.set(movimento.clienteId, current.add(signedDelta(movimento.natureza, toDecimal(movimento.valor))));
+    }
+
+    for (const [clienteId, delta] of deltaPorCliente) {
+      if (delta.eq(0)) continue;
+
+      await lockCarteiraCliente(tx, clienteId);
+      const carteira = await tx.atacadoCarteiraCliente.findUniqueOrThrow({
+        where: { clienteId },
+        select: { saldoAtual: true }
+      });
+
+      await tx.atacadoCarteiraCliente.update({
+        where: { clienteId },
+        data: { saldoAtual: toDecimal(carteira.saldoAtual).sub(delta) }
+      });
+    }
+
+    await tx.atacadoPedido.delete({ where: { id } });
     return pedido;
   });
 }

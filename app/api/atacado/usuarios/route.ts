@@ -1,4 +1,4 @@
-import { handleApiError, ok } from "@/lib/api-response";
+import { fail, handleApiError, ok } from "@/lib/api-response";
 import { requireAnyPermission } from "@/lib/atacado/permissions";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
@@ -37,6 +37,10 @@ const updateUserSchema = userSchemaBase.extend({
       path: ["password"]
     });
   }
+});
+
+const deleteUserSchema = z.object({
+  id: z.string().uuid()
 });
 
 async function requireUsersManager(request: Request) {
@@ -235,6 +239,52 @@ export async function PATCH(request: Request) {
     });
 
     return ok({ usuario: formatUser(saved) });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const access = await requireUsersManager(request);
+    if (access.error) return access.error;
+
+    const body = deleteUserSchema.parse(await request.json());
+    if (body.id === access.user.id) {
+      return fail("FORBIDDEN", "Nao e possivel excluir o proprio usuario.", 403);
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { id: body.id },
+      include: { roles: { include: { role: true } } }
+    });
+
+    if (!target) {
+      return fail("USER_NOT_FOUND", "Usuario nao encontrado.", 404);
+    }
+
+    const sessionIsMaster = access.user.roles.includes("master");
+    const targetIsMaster = target.roles.some((entry) => entry.role.slug === "master");
+    if (targetIsMaster && !sessionIsMaster) {
+      return fail("FORBIDDEN", "Somente Master pode excluir usuario Master.", 403);
+    }
+
+    await prisma.$transaction([
+      prisma.userRole.deleteMany({ where: { userId: body.id } }),
+      prisma.auditLog.updateMany({ where: { actorId: body.id }, data: { actorId: null } }),
+      prisma.upload.updateMany({ where: { uploadedById: body.id }, data: { uploadedById: null } }),
+      prisma.apiToken.updateMany({ where: { createdById: body.id }, data: { createdById: null } }),
+      prisma.atacadoPedido.updateMany({ where: { vendedorId: body.id }, data: { vendedorId: null } }),
+      prisma.atacadoAnexo.updateMany({ where: { uploadedById: body.id }, data: { uploadedById: null } }),
+      prisma.atacadoPagamento.updateMany({ where: { registradoPorId: body.id }, data: { registradoPorId: null } }),
+      prisma.atacadoEntrega.updateMany({ where: { motoristaId: body.id }, data: { motoristaId: null } }),
+      prisma.atacadoEntrega.updateMany({ where: { registradoPorId: body.id }, data: { registradoPorId: null } }),
+      prisma.atacadoHistoricoStatus.updateMany({ where: { usuarioId: body.id }, data: { usuarioId: null } }),
+      prisma.atacadoCarteiraMovimento.updateMany({ where: { criadoPorUsuarioId: body.id }, data: { criadoPorUsuarioId: null } }),
+      prisma.user.delete({ where: { id: body.id } })
+    ]);
+
+    return ok({ usuario: formatUser(target), deleted: true });
   } catch (error) {
     return handleApiError(error);
   }
