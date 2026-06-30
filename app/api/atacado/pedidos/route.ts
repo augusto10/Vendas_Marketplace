@@ -1,4 +1,5 @@
 import { type AtacadoPedidoStatus } from "@prisma/client";
+import { readFile } from "fs/promises";
 import { handleApiError, ok } from "@/lib/api-response";
 import { requirePermission } from "@/lib/atacado/permissions";
 import { pedidoSchema } from "@/lib/atacado/schemas";
@@ -6,6 +7,34 @@ import { createPedido, listPedidos } from "@/lib/atacado/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const DEBUG_PEDIDO_SESSION_ID = "pedido-numero-conflict";
+
+async function reportPedidoNumeroRouteDebug(location: string, msg: string, data: Record<string, unknown>) {
+  let url = "http://127.0.0.1:7777/event";
+  let sessionId = DEBUG_PEDIDO_SESSION_ID;
+
+  try {
+    const env = await readFile(`.dbg/${DEBUG_PEDIDO_SESSION_ID}.env`, "utf8");
+    url = env.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || url;
+    sessionId = env.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || sessionId;
+  } catch {}
+
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        runId: "pre-fix",
+        hypothesisId: "E",
+        location,
+        msg,
+        data,
+        ts: Date.now()
+      })
+    });
+  } catch {}
+}
 
 export async function GET(request: Request) {
   try {
@@ -39,6 +68,12 @@ export async function POST(request: Request) {
     const pedido = await createPedido(body, access.user.id);
     return ok({ pedido }, 201);
   } catch (error) {
+    // #region debug-point E:route-post-error
+    await reportPedidoNumeroRouteDebug("app/api/atacado/pedidos/route.ts:POST:catch", "[DEBUG] pedidos POST failed", {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : typeof error
+    });
+    // #endregion
     return handleApiError(error);
   }
 }

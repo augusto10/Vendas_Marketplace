@@ -8,6 +8,7 @@ import {
   type AtacadoPagamentoStatus
 } from "@prisma/client";
 import { randomUUID } from "crypto";
+import { readFile } from "fs/promises";
 import { prisma } from "@/lib/prisma";
 import type { z } from "zod";
 import type { clienteSchema, concluirEntregaSchema, entregaSchema, pagamentoSchema, pedidoSchema, produtoSchema, statusPedidoSchema } from "@/lib/atacado/schemas";
@@ -56,9 +57,37 @@ type PedidoItemBuildOptions = {
 
 type DecimalLike = Prisma.Decimal.Value;
 const CREATE_PEDIDO_MAX_RETRIES = 5;
+const DEBUG_PEDIDO_SESSION_ID = "pedido-numero-conflict";
 
 function toDecimal(value: DecimalLike | Prisma.Decimal = 0) {
   return value instanceof Prisma.Decimal ? value : new Prisma.Decimal(value);
+}
+
+async function reportPedidoNumeroDebug(hypothesisId: string, location: string, msg: string, data: Record<string, unknown>) {
+  let url = "http://127.0.0.1:7777/event";
+  let sessionId = DEBUG_PEDIDO_SESSION_ID;
+
+  try {
+    const env = await readFile(`.dbg/${DEBUG_PEDIDO_SESSION_ID}.env`, "utf8");
+    url = env.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || url;
+    sessionId = env.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || sessionId;
+  } catch {}
+
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        runId: "pre-fix",
+        hypothesisId,
+        location,
+        msg,
+        data,
+        ts: Date.now()
+      })
+    });
+  } catch {}
 }
 
 function isPedidoNumeroConflictError(error: unknown) {
@@ -555,14 +584,39 @@ export async function createPedido(data: PedidoInput, userId: string, options: P
     where: { id: { in: data.itens.map((item) => item.produtoId) } }
   });
 
+  // #region debug-point C:create-pedido-entry
+  await reportPedidoNumeroDebug("C", "lib/atacado/service.ts:createPedido:entry", "[DEBUG] createPedido entry", {
+    clienteId: data.clienteId,
+    vendedorId: data.vendedorId ?? userId,
+    itensCount: data.itens.length,
+    produtosCount: produtos.length,
+    maxRetries: CREATE_PEDIDO_MAX_RETRIES
+  });
+  // #endregion
+
   for (let attempt = 1; attempt <= CREATE_PEDIDO_MAX_RETRIES; attempt += 1) {
     try {
       return await prisma.$transaction(async (tx) => {
         const today = new Date();
-        const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-        const count = await tx.atacadoPedido.count({ where: { criadoEm: { gte: start, lt: end } } });
-        const numero = `AT${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}-${String(count + 1).padStart(4, "0")}`;
+        const numeroPrefix = `AT${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}-`;
+        const latestPedido = await tx.atacadoPedido.findFirst({
+          where: { numero: { startsWith: numeroPrefix } },
+          orderBy: { numero: "desc" },
+          select: { numero: true }
+        });
+        const lastSequence = Number(latestPedido?.numero.match(/-(\d+)$/)?.[1] ?? 0);
+        const numero = `${numeroPrefix}${String(lastSequence + 1).padStart(4, "0")}`;
+
+        // #region debug-point B:numero-generated
+        await reportPedidoNumeroDebug("B", "lib/atacado/service.ts:createPedido:numero", "[DEBUG] createPedido generated numero", {
+          attempt,
+          numeroPrefix,
+          latestNumero: latestPedido?.numero ?? null,
+          lastSequence,
+          numero,
+          generatedAt: today.toISOString()
+        });
+        // #endregion
 
         const itens = buildPedidoItens(data, produtos, options);
 
@@ -589,9 +643,29 @@ export async function createPedido(data: PedidoInput, userId: string, options: P
           }
         });
 
+        // #region debug-point D:create-success
+        await reportPedidoNumeroDebug("D", "lib/atacado/service.ts:createPedido:success", "[DEBUG] createPedido success", {
+          attempt,
+          pedidoId: pedido.id,
+          numero: pedido.numero,
+          status: pedido.status
+        });
+        // #endregion
+
         return pedido;
       });
     } catch (error) {
+      // #region debug-point A:pedido-create-error
+      await reportPedidoNumeroDebug("A", "lib/atacado/service.ts:createPedido:catch", "[DEBUG] createPedido error", {
+        attempt,
+        isKnownRequestError: error instanceof Prisma.PrismaClientKnownRequestError,
+        prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
+        prismaTarget: error instanceof Prisma.PrismaClientKnownRequestError ? error.meta?.target ?? null : null,
+        recognizedNumeroConflict: isPedidoNumeroConflictError(error),
+        message: error instanceof Error ? error.message : String(error)
+      });
+      // #endregion
+
       if (attempt === CREATE_PEDIDO_MAX_RETRIES || !isPedidoNumeroConflictError(error)) {
         throw error;
       }
