@@ -55,9 +55,24 @@ type PedidoItemBuildOptions = {
 };
 
 type DecimalLike = Prisma.Decimal.Value;
+const CREATE_PEDIDO_MAX_RETRIES = 5;
 
 function toDecimal(value: DecimalLike | Prisma.Decimal = 0) {
   return value instanceof Prisma.Decimal ? value : new Prisma.Decimal(value);
+}
+
+function isPedidoNumeroConflictError(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+
+  const target = Array.isArray(error.meta?.target)
+    ? error.meta.target.map((value) => String(value))
+    : typeof error.meta?.target === "string"
+      ? [error.meta.target]
+      : [];
+
+  return target.includes("numero");
 }
 
 function signedDelta(natureza: CarteiraMovimentoNatureza, valor: Prisma.Decimal) {
@@ -540,40 +555,50 @@ export async function createPedido(data: PedidoInput, userId: string, options: P
     where: { id: { in: data.itens.map((item) => item.produtoId) } }
   });
 
-  return prisma.$transaction(async (tx) => {
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-    const count = await tx.atacadoPedido.count({ where: { criadoEm: { gte: start, lt: end } } });
-    const numero = `AT${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}-${String(count + 1).padStart(4, "0")}`;
+  for (let attempt = 1; attempt <= CREATE_PEDIDO_MAX_RETRIES; attempt += 1) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const today = new Date();
+        const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+        const count = await tx.atacadoPedido.count({ where: { criadoEm: { gte: start, lt: end } } });
+        const numero = `AT${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}-${String(count + 1).padStart(4, "0")}`;
 
-    const itens = buildPedidoItens(data, produtos, options);
+        const itens = buildPedidoItens(data, produtos, options);
 
-    const valorTotal = itens.reduce((sum, item) => sum.add(item.valorTotal), new Prisma.Decimal(0));
-    const pedido = await tx.atacadoPedido.create({
-      data: {
-        numero,
-        clienteId: data.clienteId,
-        vendedorId: data.vendedorId ?? userId,
-        status: "AGUARDANDO_SEPARACAO",
-        observacao: data.observacao,
-        valorTotal,
-        itens: { create: itens }
-      },
-      include: { cliente: true, itens: { include: { produto: true } } }
-    });
+        const valorTotal = itens.reduce((sum, item) => sum.add(item.valorTotal), new Prisma.Decimal(0));
+        const pedido = await tx.atacadoPedido.create({
+          data: {
+            numero,
+            clienteId: data.clienteId,
+            vendedorId: data.vendedorId ?? userId,
+            status: "AGUARDANDO_SEPARACAO",
+            observacao: data.observacao,
+            valorTotal,
+            itens: { create: itens }
+          },
+          include: { cliente: true, itens: { include: { produto: true } } }
+        });
 
-    await tx.atacadoHistoricoStatus.create({
-      data: {
-        pedidoId: pedido.id,
-        usuarioId: userId,
-        statusNovo: pedido.status,
-        observacao: "Pedido criado"
+        await tx.atacadoHistoricoStatus.create({
+          data: {
+            pedidoId: pedido.id,
+            usuarioId: userId,
+            statusNovo: pedido.status,
+            observacao: "Pedido criado"
+          }
+        });
+
+        return pedido;
+      });
+    } catch (error) {
+      if (attempt === CREATE_PEDIDO_MAX_RETRIES || !isPedidoNumeroConflictError(error)) {
+        throw error;
       }
-    });
+    }
+  }
 
-    return pedido;
-  });
+  throw new Error("Nao foi possivel gerar um numero unico para o pedido.");
 }
 
 export async function updatePedido(id: string, data: PedidoInput, userId: string, options: PedidoItemBuildOptions = {}) {
