@@ -1,5 +1,5 @@
 import { ok, handleApiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/atacado/permissions";
+import { requireAnyPermission } from "@/lib/atacado/permissions";
 import { getRelatorioCarteira } from "@/lib/atacado/service";
 import { parsePeriod } from "@/lib/period";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const access = await requirePermission("atacado.financeiro.view", request);
+    const access = await requireAnyPermission(["atacado.financeiro.view", "atacado.pedidos.view"], request);
     if (access.error) return access.error;
 
     const url = new URL(request.url);
