@@ -67,7 +67,9 @@ const rolePermissions: Record<string, string[]> = {
     "atacado.clientes.manage",
     "atacado.produtos.view",
     "atacado.pedidos.view",
-    "atacado.pedidos.create"
+    "atacado.pedidos.create",
+    "atacado.pedidos.update",
+    "atacado.entregas.view"
   ],
   separacao_atacado: [
     "atacado.produtos.view",

@@ -1153,9 +1153,9 @@ export function listPedidosLiberadosParaEntrega() {
   });
 }
 
-export function listEntregasMotorista(userId: string) {
+export function listEntregasMotorista(userId?: string | null) {
   return prisma.atacadoEntrega.findMany({
-    where: { motoristaId: userId },
+    where: userId ? { motoristaId: userId } : undefined,
     include: {
       pedido: {
         include: {
