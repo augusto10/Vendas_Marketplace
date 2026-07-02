@@ -12,7 +12,7 @@ import { readFile } from "fs/promises";
 import { prisma } from "@/lib/prisma";
 import type { z } from "zod";
 import type { clienteSchema, concluirEntregaSchema, entregaSchema, pagamentoSchema, pedidoSchema, produtoSchema, statusPedidoSchema } from "@/lib/atacado/schemas";
-import { cloudinaryFolder, uploadImage } from "@/lib/cloudinary/upload";
+import { cloudinaryFolder, uploadFile, uploadImage } from "@/lib/cloudinary/upload";
 
 type ClienteInput = z.infer<typeof clienteSchema>;
 type ProdutoInput = z.infer<typeof produtoSchema>;
@@ -870,7 +870,7 @@ export async function updatePedidoStatus(id: string, data: StatusPedidoInput, us
 }
 
 export async function addPedidoAnexo(id: string, file: File, tipo: AtacadoAnexoTipo, userId: string) {
-  const uploaded = await uploadImage(file, cloudinaryFolder(`pedidos/${tipo.toLowerCase()}`));
+  const uploaded = await uploadFile(file, cloudinaryFolder(`pedidos/${tipo.toLowerCase()}`));
   return prisma.atacadoAnexo.create({
     data: {
       pedidoId: id,
@@ -881,12 +881,12 @@ export async function addPedidoAnexo(id: string, file: File, tipo: AtacadoAnexoT
       originalName: file.name,
       mimeType: uploaded.mimeType,
       size: uploaded.size,
-      metadata: { width: uploaded.width, height: uploaded.height }
+      metadata: uploaded.width || uploaded.height ? { width: uploaded.width, height: uploaded.height } : undefined
     }
   });
 }
 
-async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, data: PagamentoInput, userId: string, uploaded: Awaited<ReturnType<typeof uploadImage>> | null) {
+async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, data: PagamentoInput, userId: string, uploaded: Awaited<ReturnType<typeof uploadFile>> | null) {
   const pedido = await tx.atacadoPedido.findUniqueOrThrow({
     where: { id },
     select: {
@@ -947,13 +947,37 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
       }
 
       if (valorPago.gt(valorAplicado)) {
+        const aplicacaoExcedente = await aplicarValorEmPedidosAbertosTx(tx, pedido.clienteId, valorPago.sub(valorAplicado), {
+          excludePedidoId: id,
+          pagamentoId: pagamento.id,
+          origem: "PAGAMENTO",
+          criadoPorUsuarioId: userId,
+          observacao: "Pagamento excedente aplicado em pedido em aberto.",
+          dataMovimento: pagamento.registradoEm
+        });
+
+        if (aplicacaoExcedente.restante.lte(0)) {
+          const saldoDepoisExcedente = await sumMovimentosPedido(tx, id);
+          const statusFinalExcedente: AtacadoPagamentoStatus = saldoDepoisExcedente.isNegative() ? "PARCIAL" : "PAGO";
+          if (pagamento.status !== statusFinalExcedente) {
+            await tx.atacadoPagamento.update({
+              where: { id: pagamento.id },
+              data: { status: statusFinalExcedente }
+            });
+          }
+          if (!["EM_ENTREGA", "ENTREGUE"].includes(pedido.status)) {
+            await updatePedidoStatusTx(tx, id, { status: statusFinalExcedente === "PARCIAL" ? "AGUARDANDO_PAGAMENTO" : "PAGO", observacao: statusFinalExcedente === "PARCIAL" ? "Pagamento parcial registrado" : "Pagamento confirmado" }, userId, { isMaster: true, createOpenMovement: false });
+          }
+          return pagamento;
+        }
+
         await createCarteiraMovimento(tx, {
           clienteId: pedido.clienteId,
           pedidoId: id,
           pagamentoId: pagamento.id,
           tipo: "SOBRA_PAGAMENTO",
           natureza: "CREDITO",
-          valor: valorPago.sub(valorAplicado),
+          valor: aplicacaoExcedente.restante,
           origem: "PAGAMENTO",
           criadoPorUsuarioId: userId,
           observacao: "Pagamento excedente registrado como credito futuro.",
@@ -978,13 +1002,23 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
         idempotencyKey: `pedido:${id}:abertura`
       });
     } else if (valorPago.gt(pedido.valorTotal)) {
+      const aplicacaoExcedente = await aplicarValorEmPedidosAbertosTx(tx, pedido.clienteId, valorPago.sub(pedido.valorTotal), {
+        excludePedidoId: id,
+        pagamentoId: pagamento.id,
+        origem: "PAGAMENTO",
+        criadoPorUsuarioId: userId,
+        observacao: "Pagamento excedente aplicado em pedido em aberto.",
+        dataMovimento: pagamento.registradoEm
+      });
+
+      if (aplicacaoExcedente.restante.gt(0)) {
       await createCarteiraMovimento(tx, {
         clienteId: pedido.clienteId,
         pedidoId: id,
         pagamentoId: pagamento.id,
         tipo: "SOBRA_PAGAMENTO",
         natureza: "CREDITO",
-        valor: valorPago.sub(pedido.valorTotal),
+        valor: aplicacaoExcedente.restante,
         origem: "PAGAMENTO",
         criadoPorUsuarioId: userId,
         observacao: "Pagamento excedente registrado como credito futuro.",
@@ -992,6 +1026,7 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
         dataMovimento: pagamento.registradoEm,
         idempotencyKey: `pagamento:${pagamento.id}:sobra`
       });
+      }
     }
 
     const saldoDepois = await sumMovimentosPedido(tx, id);
@@ -1014,7 +1049,7 @@ async function registerPagamentoTx(tx: Prisma.TransactionClient, id: string, dat
 }
 
 export async function registerPagamento(id: string, data: PagamentoInput, userId: string, file?: File) {
-  const uploaded = file ? await uploadImage(file, cloudinaryFolder("pagamentos")) : null;
+  const uploaded = file ? await uploadFile(file, cloudinaryFolder("pagamentos")) : null;
   return prisma.$transaction(async (tx) => registerPagamentoTx(tx, id, data, userId, uploaded));
 }
 
@@ -1580,6 +1615,125 @@ export function criarCreditoManual(clienteId: string, data: { valor: Prisma.Deci
   });
 }
 
+async function aplicarValorEmPedidosAbertosTx(
+  tx: Prisma.TransactionClient,
+  clienteId: string,
+  valor: Prisma.Decimal.Value,
+  options: {
+    excludePedidoId?: string;
+    pagamentoId?: string | null;
+    origem: CarteiraMovimentoOrigem;
+    criadoPorUsuarioId: string;
+    observacao: string;
+    dataMovimento: Date;
+    metadata?: Prisma.InputJsonValue | null;
+  }
+) {
+  let restante = toDecimal(valor);
+  const movimentosCriados = [];
+  const closedStatuses: AtacadoPedidoStatus[] = ["CANCELADO", "RASCUNHO", "PAGO", "EM_ENTREGA", "ENTREGUE"];
+
+  const movimentosComPedido = await tx.atacadoCarteiraMovimento.findMany({
+    where: {
+      clienteId,
+      pedidoId: options.excludePedidoId ? { not: options.excludePedidoId } : { not: null }
+    },
+    select: {
+      pedidoId: true,
+      dataMovimento: true,
+      pedido: { select: { id: true, status: true } }
+    },
+    orderBy: [{ dataMovimento: "asc" }, { createdAt: "asc" }]
+  });
+  const pedidosEmAberto = await tx.atacadoPedido.findMany({
+    where: {
+      clienteId,
+      id: options.excludePedidoId ? { not: options.excludePedidoId } : undefined,
+      status: { notIn: closedStatuses }
+    },
+    select: {
+      id: true,
+      valorTotal: true,
+      criadoEm: true,
+      pagamentos: {
+        where: { status: { not: "PENDENTE" } },
+        select: { valorPago: true }
+      }
+    },
+    orderBy: { criadoEm: "asc" }
+  });
+  const pedidosEmAbertoPorId = new Map(pedidosEmAberto.map((pedido) => [pedido.id, pedido]));
+  const pedidoIds = [
+    ...new Set([
+      ...movimentosComPedido
+        .filter((movimento) => movimento.pedido && !closedStatuses.includes(movimento.pedido.status))
+        .map((movimento) => movimento.pedidoId)
+        .filter(Boolean) as string[],
+      ...pedidosEmAberto.map((pedido) => pedido.id)
+    ])
+  ];
+
+  for (const pedidoId of pedidoIds) {
+    if (restante.lte(0)) break;
+
+    let saldoPedido = await sumMovimentosPedido(tx, pedidoId);
+    if (saldoPedido.eq(0)) {
+      const pedidoAberto = pedidosEmAbertoPorId.get(pedidoId);
+      if (pedidoAberto) {
+        const totalPago = pedidoAberto.pagamentos.reduce((sum, pagamento) => sum.add(toDecimal(pagamento.valorPago)), new Prisma.Decimal(0));
+        const saldoAberto = totalPago.sub(toDecimal(pedidoAberto.valorTotal));
+
+        if (saldoAberto.isNegative()) {
+          await createCarteiraMovimento(tx, {
+            clienteId,
+            pedidoId,
+            tipo: "PEDIDO_ABERTO_SEM_PAGAMENTO",
+            natureza: "DEBITO",
+            valor: saldoAberto.abs(),
+            origem: "SISTEMA",
+            criadoPorUsuarioId: options.criadoPorUsuarioId,
+            observacao: "Abertura automatica para aplicar saldo na carteira.",
+            dataCompetencia: pedidoAberto.criadoEm,
+            dataMovimento: pedidoAberto.criadoEm,
+            idempotencyKey: `pedido:${pedidoId}:abertura`
+          });
+          saldoPedido = saldoAberto;
+        }
+      }
+    }
+    if (!saldoPedido.isNegative()) continue;
+
+    const saldoDevedor = saldoPedido.abs();
+    const valorAplicado = restante.gte(saldoDevedor) ? saldoDevedor : restante;
+    const tipoAplicacao = valorAplicado.eq(saldoDevedor) ? "PAGAMENTO_TOTAL" : "PAGAMENTO_PARCIAL";
+
+    movimentosCriados.push(await createCarteiraMovimento(tx, {
+      clienteId,
+      pedidoId,
+      pagamentoId: options.pagamentoId ?? null,
+      tipo: tipoAplicacao,
+      natureza: "CREDITO",
+      valor: valorAplicado,
+      origem: options.origem,
+      criadoPorUsuarioId: options.criadoPorUsuarioId,
+      observacao: options.observacao,
+      dataCompetencia: options.dataMovimento,
+      dataMovimento: options.dataMovimento,
+      metadata: options.metadata,
+      idempotencyKey: undefined
+    }));
+
+    restante = restante.sub(valorAplicado);
+    const saldoAposAplicacao = await sumMovimentosPedido(tx, pedidoId);
+    await updatePedidoStatusTx(tx, pedidoId, {
+      status: saldoAposAplicacao.isNegative() ? "AGUARDANDO_PAGAMENTO" : "PAGO",
+      observacao: saldoAposAplicacao.isNegative() ? "Saldo aplicado parcialmente na carteira" : "Saldo aplicado e pedido quitado"
+    }, options.criadoPorUsuarioId, { isMaster: true, createOpenMovement: false });
+  }
+
+  return { movimentosCriados, restante };
+}
+
 async function listMovimentosCarteiraVisiveis(tx: Prisma.TransactionClient, clienteId: string) {
   return tx.atacadoCarteiraMovimento.findMany({
     where: { clienteId },
@@ -1612,7 +1766,7 @@ export async function adicionarSaldoCarteiraCliente(
     observacao: string;
     dataCompetencia?: Date;
     criadoPorUsuarioId: string;
-    comprovante?: Awaited<ReturnType<typeof uploadImage>> | null;
+    comprovante?: Awaited<ReturnType<typeof uploadFile>> | null;
   }
 ) {
   return prisma.$transaction(async (tx) => {

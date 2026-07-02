@@ -42,9 +42,9 @@ export const PERMISSIONS = [
 export type PermissionKey = (typeof PERMISSIONS)[number];
 
 const rolePermissionFallbacks: Record<string, PermissionKey[]> = {
-  vendas_atacado: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create", "atacado.pedidos.update", "atacado.entregas.view"],
-  vendas: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create", "atacado.pedidos.update", "atacado.entregas.view"],
-  vendedor: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create", "atacado.pedidos.update", "atacado.entregas.view"],
+  vendas_atacado: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create", "atacado.pedidos.update", "atacado.separacao.view", "atacado.separacao.update", "atacado.financeiro.view", "atacado.financeiro.update", "atacado.entregas.view"],
+  vendas: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create", "atacado.pedidos.update", "atacado.separacao.view", "atacado.separacao.update", "atacado.financeiro.view", "atacado.financeiro.update", "atacado.entregas.view"],
+  vendedor: ["atacado.clientes.view", "atacado.clientes.manage", "atacado.produtos.view", "atacado.pedidos.view", "atacado.pedidos.create", "atacado.pedidos.update", "atacado.separacao.view", "atacado.separacao.update", "atacado.financeiro.view", "atacado.financeiro.update", "atacado.entregas.view"],
   financeiro_atacado: ["atacado.clientes.view", "atacado.produtos.view", "atacado.pedidos.view", "atacado.entregas.view", "atacado.financeiro.view", "atacado.financeiro.update"],
   financeiro: ["atacado.clientes.view", "atacado.produtos.view", "atacado.pedidos.view", "atacado.entregas.view", "atacado.financeiro.view", "atacado.financeiro.update"],
   separacao_atacado: ["atacado.produtos.view", "atacado.pedidos.view", "atacado.separacao.view", "atacado.separacao.update", "atacado.entregas.view", "atacado.entregas.update"],

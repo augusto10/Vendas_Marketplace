@@ -3,6 +3,7 @@ import sharp from "sharp";
 
 const maxFileSize = 8 * 1024 * 1024;
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+const allowedFileMimeTypes = new Set([...allowedMimeTypes, "application/pdf"]);
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -18,6 +19,8 @@ export type UploadedImage = {
   width?: number;
   height?: number;
 };
+
+export type UploadedFile = UploadedImage;
 
 export async function uploadImage(file: File, folder: string): Promise<UploadedImage> {
   if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
@@ -61,6 +64,50 @@ export async function uploadImage(file: File, folder: string): Promise<UploadedI
     size,
     width: result.width ?? width,
     height: result.height ?? height
+  };
+}
+
+export async function uploadFile(file: File, folder: string): Promise<UploadedFile> {
+  if (file.type !== "application/pdf") {
+    return uploadImage(file, folder);
+  }
+
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    throw new Error("Cloudinary nao configurado.");
+  }
+
+  if (!allowedFileMimeTypes.has(file.type)) {
+    throw new Error("Tipo de arquivo nao permitido.");
+  }
+
+  if (file.size > maxFileSize) {
+    throw new Error("Arquivo acima do limite de 8MB.");
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: "raw"
+      },
+      (error, response) => {
+        if (error || !response) {
+          reject(error ?? new Error("Falha ao enviar arquivo."));
+          return;
+        }
+        resolve(response);
+      }
+    );
+
+    stream.end(buffer);
+  });
+
+  return {
+    url: result.secure_url,
+    publicId: result.public_id,
+    mimeType: file.type,
+    size: file.size
   };
 }
 

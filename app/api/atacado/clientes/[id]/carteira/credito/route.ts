@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { requirePermission } from "@/lib/atacado/permissions";
 import { adicionarSaldoCarteiraCliente } from "@/lib/atacado/service";
-import { cloudinaryFolder, uploadImage } from "@/lib/cloudinary/upload";
+import { cloudinaryFolder, uploadFile } from "@/lib/cloudinary/upload";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -46,7 +46,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return fail("INVALID_PASSWORD", "Senha do administrador invalida.", 401);
     }
 
-    const uploaded = file instanceof File ? await uploadImage(file, cloudinaryFolder("carteira")) : null;
+    const uploaded = file instanceof File ? await uploadFile(file, cloudinaryFolder("carteira")) : null;
     const movimentos = await adicionarSaldoCarteiraCliente(id, {
       valor: body.valor,
       observacao: observacao || "Saldo adicionado com comprovante.",
